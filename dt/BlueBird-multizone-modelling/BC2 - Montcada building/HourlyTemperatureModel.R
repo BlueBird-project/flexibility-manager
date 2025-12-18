@@ -157,7 +157,7 @@ HourlyTemperatureModel <- function(df, studied_space, collindant_spaces, lags_te
   #If heating mode and setpoint > temp -> Setpoint = Setpoint, else 0
   #For the collindant spaces
   
-  if(modelMode!="dynamicsEstimator") {
+  if(modelMode=="train") {
     df <- df %>% mutate(across(all_of(colnames(df)[Reduce(`|`, lapply(studied_space, function(pat) {
       grepl(paste0("\\TempSP_",pat,"\\b"), colnames(df))
     }))]), ~ ifelse((.>temperature & OperationMode<3), . , ifelse((.<temperature & OperationMode>2), ., 0))))

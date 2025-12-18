@@ -342,171 +342,171 @@ run_EF_assessment_train <- function(buildingSubject, df_import, settings, librar
   write_json(df_result, paste0(settings$OutputDataDirectory,"/trainResults/train_results.json"), pretty = TRUE, dataframe = "rows")
   
   }
-  
-  
-  
-  #Import JSON
-  df_predict <- fromJSON(paste(settings$InputDataDirectory,"df_predict.json",sep="/"))
-  df_predict$time <- lubridate::ymd_hms(df_predict$time)
-  df_predict$localtime <- with_tz(df_predict$time, "Europe/Madrid")
-  df_predict <- df_predict[1:9,]
-  
-  
-  #Estimate wind speed and direction from the North and East Components
-  df_predict <- df_predict %>% mutate(WindSpeed=sqrt(u^2 + v^2)) %>%
-    mutate(WindDir=(180+(atan2(v, u)*(180/pi)))%%360)
-  
-  
-  df_predict <- df_predict %>%
-    rowwise() %>%
-    mutate(OperationMode = {
-      values <- c_across(starts_with("OpMode"))
-      frecs <- table(values)
-      as.numeric(names(frecs)[which.max(frecs)])
-    }) %>%
-    ungroup()
-  
-  maxlag <- max(lags_temperature,
-                lags_setpointTemperature,
-                lags_outdoorTemperature,
-                lags_collindant_temperature,
-                lags_collindant_setpoint_temperature)
-  
-  
-  nhorisons <- nrow(df_predict)-maxlag
-  if (modelMode=="predict") {
-    lags_temperature <- 4
-    lags_setpointTemperature <- 1
-    lags_outdoorTemperature <- 5
-    lags_collindant_temperature <- 4
-    lags_collindant_setpoint_temperature <- 0
-    
-    for (n in 1:nhorisons) {
-      for (l in names(Rooms_list)) {
-        # n=1
-        # l="1"
-        studied_space <- l
-        collindant_spaces <- Rooms_list[[l]]
-        # print(studied_space)
-        write(
-          c("* Modelling temperature of Room:",
-            sprintf(" %s ",  studied_space)),
-          stderr())
-        if (!is.null(collindant_spaces)) {
-          write(
-            c("* Its adjoining spaces are:",
-              sprintf(" %s ",  collindant_spaces)),
-            stderr())
-        } else{
-          write(
-            c("* The room has no adjoining spaces"),
-            stderr())
-        }
-        
-        # studied_space <- "4"
-        # collindant_spaces <- c("2","3")
-        TempmodelId <- paste0("Room",studied_space,"_TemperatureModel")
-        df_predict_aux <- HourlyTemperatureModel(df=df_predict,studied_space=studied_space,
-                                                                             collindant_spaces=collindant_spaces,
-                                                                             lags_temperature=lags_temperature,
-                                                                                        lags_setpointTemperature=lags_setpointTemperature,
-                                                                                        lags_collindant_setpoint_temperature=lags_collindant_setpoint_temperature,
-                                                                                        lags_outdoorTemperature=lags_outdoorTemperature,
-                                                                                        lags_collindant_temperature=lags_collindant_temperature,
-                                                                                        sensor_sensitivity=sensor_sensitivity,
-                                                                                        predictionHorizonInHours = predictionHorizonInHours,
-                                                                                        modelId=TempmodelId,
-                                                                                        modelMode="predict",
-                                                                                        plots=F) %>% select(predicted,time) %>% mutate(predicted=predicted-273.15) %>% rename(!!paste0("TempPred_",studied_space):=predicted)
-        df_predict[(maxlag+n),paste0("TempPred_",studied_space)] <- df_predict_aux[(n),paste0("TempPred_",studied_space)]
-            
-        if ((maxlag+n)<nrow(df_predict)) {
-          df_predict[(maxlag+n+1),paste0("AmbTemp_",studied_space)] <- df_predict[(maxlag+n),paste0("TempPred_",studied_space)]
-        }
-      }
-    }
-    #Train HVAC energy consumption model
-    HVACEnergymodelId <- paste0("HVACEnergy","Model")
-    
-    df_predict <- df_predict %>%  full_join(HourlyHVACEnergyModel(df=data.frame(df_predict, stringsAsFactors = FALSE), 
-                                                                buildingSpaces=buildingSpaces,
-                                                                lags_outdoorTemperature=lags_outdoorTemperature, 
-                                                                predictionHorizonInHours= predictionHorizonInHours, 
-                                                                modelId=HVACEnergymodelId,
-                                                                modelMode="predict",
-                                                                plots=F) %>% select(predicted,time) %>% rename(Qe_hvac=predicted))
-    #Train non HVAC energy consumption model
-    CalendarEnergymodelId <- paste0("CalendarEnergy","Model")
-    df_predict <- df_predict %>% full_join(HourlyCalendarEnergyModel(df=data.frame(df_predict %>% mutate(E_Act_1=E_Act_1-E_Act_2) %>% rename(Qe=E_Act_1), stringsAsFactors = FALSE), 
-                                                                   modelId=CalendarEnergymodelId,
-                                                                   tz=tz, 
-                                                                   settings=settings,
-                                                                   modelMode="predict",
-                                                                   plots=F) %>% select(predicted,time) %>% rename(Qe_calendar=predicted))
-    
-    df_predict <- df_predict %>% mutate(Qe=Qe_hvac+Qe_calendar)
-    
-    df_result <- df_predict %>%
-      select(time, Qe) %>% rename(EnergyPred = Qe)
-    
-    df_result <- df_result[(maxlag+1):nrow(df_result),]
-    
-    # Convert time to ISO 8601 format
-    df_result$time <- sub("(\\+|\\-)(\\d{2})(\\d{2})", "\\1\\2:\\3",
-                        format(lubridate::ymd_hms(df_result$time, tz = "UTC"), "%Y-%m-%dT%H:%M:%S%z")
-    )
-    # 
-    
-    write_json(df_result, paste0(settings$OutputDataDirectory,"/trainResults/predict_results.json"), pretty = TRUE, dataframe = "rows")
-    
-    
-  }
-  
+  # 
+  # 
+  # 
+  # #Import JSON
+  # df_predict <- fromJSON(paste(settings$InputDataDirectory,"df_predict.json",sep="/"))
+  # df_predict$time <- lubridate::ymd_hms(df_predict$time)
+  # df_predict$localtime <- with_tz(df_predict$time, "Europe/Madrid")
+  # df_predict <- df_predict[1:9,]
+  # 
+  # 
+  # #Estimate wind speed and direction from the North and East Components
+  # df_predict <- df_predict %>% mutate(WindSpeed=sqrt(u^2 + v^2)) %>%
+  #   mutate(WindDir=(180+(atan2(v, u)*(180/pi)))%%360)
+  # 
+  # 
+  # df_predict <- df_predict %>%
+  #   rowwise() %>%
+  #   mutate(OperationMode = {
+  #     values <- c_across(starts_with("OpMode"))
+  #     frecs <- table(values)
+  #     as.numeric(names(frecs)[which.max(frecs)])
+  #   }) %>%
+  #   ungroup()
+  # 
+  # maxlag <- max(lags_temperature,
+  #               lags_setpointTemperature,
+  #               lags_outdoorTemperature,
+  #               lags_collindant_temperature,
+  #               lags_collindant_setpoint_temperature)
+  # 
+  # 
+  # nhorisons <- nrow(df_predict)-maxlag
+  # if (modelMode=="predict") {
+  #   lags_temperature <- 4
+  #   lags_setpointTemperature <- 1
+  #   lags_outdoorTemperature <- 5
+  #   lags_collindant_temperature <- 4
+  #   lags_collindant_setpoint_temperature <- 0
+  #   
+  #   for (n in 1:nhorisons) {
+  #     for (l in names(Rooms_list)) {
+  #       # n=1
+  #       # l="1"
+  #       studied_space <- l
+  #       collindant_spaces <- Rooms_list[[l]]
+  #       # print(studied_space)
+  #       write(
+  #         c("* Modelling temperature of Room:",
+  #           sprintf(" %s ",  studied_space)),
+  #         stderr())
+  #       if (!is.null(collindant_spaces)) {
+  #         write(
+  #           c("* Its adjoining spaces are:",
+  #             sprintf(" %s ",  collindant_spaces)),
+  #           stderr())
+  #       } else{
+  #         write(
+  #           c("* The room has no adjoining spaces"),
+  #           stderr())
+  #       }
+  #       
+  #       # studied_space <- "4"
+  #       # collindant_spaces <- c("2","3")
+  #       TempmodelId <- paste0("Room",studied_space,"_TemperatureModel")
+  #       df_predict_aux <- HourlyTemperatureModel(df=df_predict,studied_space=studied_space,
+  #                                                                            collindant_spaces=collindant_spaces,
+  #                                                                            lags_temperature=lags_temperature,
+  #                                                                                       lags_setpointTemperature=lags_setpointTemperature,
+  #                                                                                       lags_collindant_setpoint_temperature=lags_collindant_setpoint_temperature,
+  #                                                                                       lags_outdoorTemperature=lags_outdoorTemperature,
+  #                                                                                       lags_collindant_temperature=lags_collindant_temperature,
+  #                                                                                       sensor_sensitivity=sensor_sensitivity,
+  #                                                                                       predictionHorizonInHours = predictionHorizonInHours,
+  #                                                                                       modelId=TempmodelId,
+  #                                                                                       modelMode="predict",
+  #                                                                                       plots=F) %>% select(predicted,time) %>% mutate(predicted=predicted-273.15) %>% rename(!!paste0("TempPred_",studied_space):=predicted)
+  #       df_predict[(maxlag+n),paste0("TempPred_",studied_space)] <- df_predict_aux[(n),paste0("TempPred_",studied_space)]
+  #           
+  #       if ((maxlag+n)<nrow(df_predict)) {
+  #         df_predict[(maxlag+n+1),paste0("AmbTemp_",studied_space)] <- df_predict[(maxlag+n),paste0("TempPred_",studied_space)]
+  #       }
+  #     }
+  #   }
+  #   #Train HVAC energy consumption model
+  #   HVACEnergymodelId <- paste0("HVACEnergy","Model")
+  #   
+  #   df_predict <- df_predict %>%  full_join(HourlyHVACEnergyModel(df=data.frame(df_predict, stringsAsFactors = FALSE), 
+  #                                                               buildingSpaces=buildingSpaces,
+  #                                                               lags_outdoorTemperature=lags_outdoorTemperature, 
+  #                                                               predictionHorizonInHours= predictionHorizonInHours, 
+  #                                                               modelId=HVACEnergymodelId,
+  #                                                               modelMode="predict",
+  #                                                               plots=F) %>% select(predicted,time) %>% rename(Qe_hvac=predicted))
+  #   #Train non HVAC energy consumption model
+  #   CalendarEnergymodelId <- paste0("CalendarEnergy","Model")
+  #   df_predict <- df_predict %>% full_join(HourlyCalendarEnergyModel(df=data.frame(df_predict %>% mutate(E_Act_1=E_Act_1-E_Act_2) %>% rename(Qe=E_Act_1), stringsAsFactors = FALSE), 
+  #                                                                  modelId=CalendarEnergymodelId,
+  #                                                                  tz=tz, 
+  #                                                                  settings=settings,
+  #                                                                  modelMode="predict",
+  #                                                                  plots=F) %>% select(predicted,time) %>% rename(Qe_calendar=predicted))
+  #   
+  #   df_predict <- df_predict %>% mutate(Qe=Qe_hvac+Qe_calendar)
+  #   
+  #   df_result <- df_predict %>%
+  #     select(time, Qe) %>% rename(EnergyPred = Qe)
+  #   
+  #   df_result <- df_result[(maxlag+1):nrow(df_result),]
+  #   
+  #   # Convert time to ISO 8601 format
+  #   df_result$time <- sub("(\\+|\\-)(\\d{2})(\\d{2})", "\\1\\2:\\3",
+  #                       format(lubridate::ymd_hms(df_result$time, tz = "UTC"), "%Y-%m-%dT%H:%M:%S%z")
+  #   )
+  #   # 
+  #   
+  #   write_json(df_result, paste0(settings$OutputDataDirectory,"/trainResults/predict_results.json"), pretty = TRUE, dataframe = "rows")
+  #   
+  #   
+  # }
+  # 
 # 
 # 
-  list_results <- {}
-  for (l in names(Rooms_list)) {
-    studied_space <- l
-    collindant_spaces <- Rooms_list[[l]]
-    # print(studied_space)
-    write(
-      c("* Modelling temperature of Room:",
-        sprintf(" %s ",  studied_space)),
-      stderr())
-    if (!is.null(collindant_spaces)) {
-      write(
-        c("* Its adjoining spaces are:",
-          sprintf(" %s ",  collindant_spaces)),
-        stderr())
-    } else{
-      write(
-        c("* The room has no adjoining spaces"),
-        stderr())
-    }
-
-    # print(collindant_spaces)
-
-
-    # studied_space <- "4"
-    # collindant_spaces <- c("2","3")
-    # floor1 <- c("1","2","3","4","5","6")
-    TempmodelId <- paste0("Room",studied_space,"_TemperatureModel")
-
-    list_results[[paste0("Room_", l)]] <- HourlyTemperatureModel(df=df_import,
-                                                                 studied_space=studied_space,
-                                                                 collindant_spaces=collindant_spaces,
-                                                                 lags_temperature=lags_temperature,
-                                                                 lags_setpointTemperature=lags_setpointTemperature,
-                                                                 lags_collindant_setpoint_temperature=lags_collindant_setpoint_temperature,
-                                                                 lags_outdoorTemperature=lags_outdoorTemperature,
-                                                                 lags_collindant_temperature=lags_collindant_temperature,
-                                                                 sensor_sensitivity=sensor_sensitivity,
-                                                                 predictionHorizonInHours = predictionHorizonInHours,
-                                                                 modelId=TempmodelId,
-                                                                 modelMode="train",
-                                                                 plots=F)
-
-  }
+  # list_results <- {}
+  # for (l in names(Rooms_list)) {
+  #   studied_space <- l
+  #   collindant_spaces <- Rooms_list[[l]]
+  #   # print(studied_space)
+  #   write(
+  #     c("* Modelling temperature of Room:",
+  #       sprintf(" %s ",  studied_space)),
+  #     stderr())
+  #   if (!is.null(collindant_spaces)) {
+  #     write(
+  #       c("* Its adjoining spaces are:",
+  #         sprintf(" %s ",  collindant_spaces)),
+  #       stderr())
+  #   } else{
+  #     write(
+  #       c("* The room has no adjoining spaces"),
+  #       stderr())
+  #   }
+  # 
+  #   # print(collindant_spaces)
+  # 
+  # 
+  #   # studied_space <- "4"
+  #   # collindant_spaces <- c("2","3")
+  #   # floor1 <- c("1","2","3","4","5","6")
+  #   TempmodelId <- paste0("Room",studied_space,"_TemperatureModel")
+  # 
+  #   list_results[[paste0("Room_", l)]] <- HourlyTemperatureModel(df=df_import,
+  #                                                                studied_space=studied_space,
+  #                                                                collindant_spaces=collindant_spaces,
+  #                                                                lags_temperature=lags_temperature,
+  #                                                                lags_setpointTemperature=lags_setpointTemperature,
+  #                                                                lags_collindant_setpoint_temperature=lags_collindant_setpoint_temperature,
+  #                                                                lags_outdoorTemperature=lags_outdoorTemperature,
+  #                                                                lags_collindant_temperature=lags_collindant_temperature,
+  #                                                                sensor_sensitivity=sensor_sensitivity,
+  #                                                                predictionHorizonInHours = predictionHorizonInHours,
+  #                                                                modelId=TempmodelId,
+  #                                                                modelMode="predict",
+  #                                                                plots=F)
+  # 
+  # }
 
 
   # metric_results <- data.frame(
