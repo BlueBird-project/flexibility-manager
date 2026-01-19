@@ -23,7 +23,7 @@ df_predict <- df_predict %>% mutate(time=start)
 df_predict <- df_predict %>% select(-start,-end)
 # df_predict$time <- lubridate::ymd_hms(df_predict$time)
 df_predict$localtime <- with_tz(df_predict$time, "Europe/Madrid")
-df_predict <- df_predict[10:18,]
+# df_predict <- df_predict[10:18,]
 
 
 # manualResults=F

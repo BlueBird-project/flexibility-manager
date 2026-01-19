@@ -697,8 +697,8 @@ HourlyHVACEnergyModel <- function(df, buildingSpaces, lags_energy, lags_outdoorT
                                                   features=trained_models$heating$finalModel$meta$features,
                                                   transformationSentences = trained_models$heating$finalModel$meta$transformationSentences,
                                                   param=trained_models$heating$finalModel$meta$param)$data[, fterms, drop = FALSE]
-    df_result_vars <- cbind(df_result_vars,time=df$time)
-    df_result_vars <- df_result_vars %>% select(matches("nhvac"),time)
+    df_result_vars <- cbind(df_result_vars,time=df$time, outdoorTemperature=df$outdoorTemperature)
+    df_result_vars <- df_result_vars %>% select(matches("nhvac"),time, outdoorTemperature)
     df_result_vars <- df_result_vars[order(df_result_vars$time), ]
     
     
@@ -714,6 +714,8 @@ HourlyHVACEnergyModel <- function(df, buildingSpaces, lags_energy, lags_outdoorT
       df_result_heating_vars <- cbind(df_result_heating_vars,time=df_heating$time)
       df_result_heating_vars <- df_result_heating_vars %>% select(-matches(names(df_result_vars)),time)
       df_result_heating_vars <- df_result_heating_vars %>% select(-matches("IncTemp"))
+      df_result_heating_vars$tempref_cooling <- trained_models$heating$bestTune$tempref_cooling
+      df_result_heating_vars$tempref_heating <- trained_models$heating$bestTune$tempref_heating
     }  else {df_result_heating_vars<- data.frame()}
     df_result_heating_coefs <- trained_models$heating$finalModel$coefficients[nrow(trained_models$heating$finalModel$coefficients),]
 
@@ -730,6 +732,8 @@ HourlyHVACEnergyModel <- function(df, buildingSpaces, lags_energy, lags_outdoorT
       df_result_cooling_vars <- cbind(df_result_cooling_vars,time=df_cooling$time)
       df_result_cooling_vars <- df_result_cooling_vars %>% select(-matches(names(df_result_vars)),time)
       df_result_cooling_vars <- df_result_cooling_vars %>% select(-matches("IncTemp"))
+      df_result_cooling_vars$tempref_cooling <- trained_models$cooling$bestTune$tempref_cooling
+      df_result_cooling_vars$tempref_heating <- trained_models$cooling$bestTune$tempref_heating
     } else{df_result_cooling_vars<-  data.frame()}
     df_result_cooling_coefs <- trained_models$cooling$finalModel$coefficients[nrow(trained_models$cooling$finalModel$coefficients),]
 
