@@ -20,7 +20,7 @@ Previously to using the DT it's required to install **R programming language**.
 
 Next step is installing the required R packages, following the next steps:
 
-1. Install biggr package and its requirements as indicated in R package repository. In the biggr GitHub repository, it explains which requirements it has and how to install them.
+1. Install biggr package and its requirements as indicated in R package [repository](https://github.com/BeeGroup-cimne/biggr). In the biggr GitHub repository, it explains which requirements it has and how to install them.
 2. Once biggr package is installed, it is required to have installed specifically the versión 1.0.0 of onlineforecast package for its correct functioning. This specific version can be found [here](https://cran.r-project.org/src/contrib/Archive/onlineforecast/)
 
 Once the previous requirements are met, it's posible to proceed with the next step, which consists on downloading and configuring the Digital Twin.
