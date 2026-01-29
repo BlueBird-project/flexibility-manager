@@ -44,4 +44,4 @@ There are three different functions to run the three different process described
 - **DT_predict:** this functions is used to run the Digital Twin Prediction Process, which uses the DT model to predict the energy consumption of the building. To run this process the JSON file named "df_predict" must be stored in the input directory. This file must contain the data described in the DT Montcada documentation, and formated as required.
 - **DT_dynamics_estimator:** this functions is used to run the Digital Twin Dynamics Estimation Process, which generates a file containing the matrixes of each model and the transformations of the inputs (the ones that are not controlled variables) required by the models. To run this process the JSON file named "df_dynamics_estimator" must be stored in the input directory. This file must contain the data described in the DT Montcada documentation, and formated as required.
 
-
+The execution of the functions can also be done in Python by using the examples provided in RunPython.py file of the repository.
