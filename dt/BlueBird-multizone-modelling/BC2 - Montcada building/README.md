@@ -1,4 +1,4 @@
-# Digital Twin Blue Bird Multizone building
+# Blue Bird Multizone building Digital Twin
 
 This code contains is a set of functions to implement the Digital Twin (DT) of BC2 - Montcada Building, consisting on a multizone building.
 
