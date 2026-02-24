@@ -411,6 +411,14 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+######################################
+#              FlexOPTi              #
+######################################
+/FlexOPTi/.git/
+/FlexOPTi/.gitattributes
+/FlexOPTi/.github/
+/FlexOPTi/.gitignore
+/FlexOPTi/.vscode/
 
 ## Acknowledgements
 # Many thanks to `https://gitignore.io/`, written and maintained by Joe Blau, which contributed much material to this gitignore file.
