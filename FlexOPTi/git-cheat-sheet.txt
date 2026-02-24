@@ -1,0 +1,9 @@
+## Always develop on one of the feature branch 
+
+# Commit on the feature/dev branch 
+$ git commit -m "commiting feature cool branch"
+$ git checkout main 
+$ git pull origin main 
+$ git checkout feature/dev 
+$ git rebase main 
+# Resolve conflicts

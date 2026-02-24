@@ -1,59 +1,65 @@
 # Flexibility Manager - Blue Bird
 
-This code base is using the [Julia Language](https://julialang.org/) and
-[DrWatson](https://juliadynamics.github.io/DrWatson.jl/stable/)
-to make a reproducible scientific project.
+This code base is using the [Julia Language](https://julialang.org/) 
 
-Requires julia > 1.11.
+Requires julia > 1.12.
+Julia installation https://julialang.org/
 
 It is authored by kahka.
 
 ## Installation 
 
 ```julia 
+   # From within 'flexibility_manager' folder
    $ julia
-   julia> using Pkg
-   julia> Pkg.activate(".")
-   julia> Pkg.add("https://github.com/adam-eva/flex_manager.git")
-   julia> using FM 
+   julia> import Pkg
+   julia> Pkg.activate("FlexOPTi")
+   julia> using FlexOPTi 
 ```
 
-Alternatively to use the package without installing it (developement mode)
+To get help on a function call 
 
-```julia
-   $ git clone https://github.com/adam-eva/flex_manager.git
-   $ julia
-   julia> using Pkg
-   julia> Pkg.activate(".")
-   julia> using DrWatson
-   julia> @quickactivate FM
-```
-
-## Usage 
-
-API functions are defined in index.html documentation
-
-```julia
+```julia 
    julia> ?
-   help?> optimize 
-```
+   help?> optimize # Or any API function 
+``` 
 
 #### For Python usage
 
 ```python
+   $ julia
+   julia> import Pkg
+   julia> Pkg.add("PyCall")   
+
    # Install PyJulia
-   pip install julia
-   import julia
+   $ pip install julia 
+
+   # python 
+   >>> import julia
 
    # Optional if julia is not already installed 
-   julia.install()
+   >>> julia.install()
 
-   from julia import Pkg
-   Pkg.add(url="https/or/ssh/git/repo")
-   from julia import FM
+   >>> from julia import Pkg
+   >>> Pkg.activate(".")
+   >>> Pkg.develop(path="FlexOPTi")
+   >>> from julia import FlexOPTi
 
-   # Call API function 
-   FM.optimize(A, B, F, x, d, x_low=x_low_, x_high=x_high_, u_low=u_low_, y_high=y_high_)
+   # Call API functions
+   >>> out_dic = FlexOPTi.optimize(dt_file, sensors_file, forecast_file , kwargs...)
+   >>> json_data = FlexOPTi.parse_output(out_dic , pilot = "Montcada", kwargs...)
+   >>> json_file = FlexOPTi.write_outputs_to_file(json_data, file = filenamepath)
+   # Note : You will need to define DT, sensors and Forecast files. 
+```
+
+Continuous Integration 
+
+Make sure that the tests are running 
+```julia
+   $ julia 
+   julia> import Pkg
+   julia> Pkg.activate(".")
+   julia> Pkg.test()
 ```
 
 Enjoy !
