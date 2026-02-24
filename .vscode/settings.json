@@ -1,0 +1,24 @@
+{
+    "terminal.integrated.commandsToSkipShell": [
+        "language-julia.interrupt"
+    ],
+    "julia.symbolCacheDownload": true,
+    "julia.enableCrashReporter": false,
+    "julia.enableTelemetry": true,
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false,
+        "julia": false
+    },
+    "julia.executablePath": "/home/kahka/.juliaup/bin/julia",
+    "explorer.confirmDelete": false,
+
+    "julia.debuggerDefaultCompiled": [
+
+        "ALL_MODULES_EXCEPT_MAIN",
+        "-FM."
+    ],
+    "julia.NumThreads": 0
+}
