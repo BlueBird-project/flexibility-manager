@@ -1,0 +1,126 @@
+{
+  "EEMAssessmentConditions": {
+    "MinDaysWithoutOutliers": {
+        "PT1H": 30,
+        "P1M": 60
+      }
+  },
+  "Indicators": {
+    "AggregatableByTime": {
+      "Name": ["EnergyUseSavingsRelative", "EnergyUseSavings", "EnergyUseSavingsIntensity", "EnergyCostSavingsRelative", "EnergyCostSavings", "EnergyCostSavingsIntensity", "EnergyEmissionsSavingsRelative", "EnergyEmissionsSavings", "EnergyEmissionsSavingsIntensity"],
+      "AllowedMeasuredProperties": ["EnergyActive", "Energy", "EnergyConsumptionTotal", "EnergyConsumptionPrimary"]
+    },
+    "NonAggregatableByTime": {
+      "Name": ["NormalisedInvestmentCost", "AvoidanceCost", "SimplePayback", "NetPresentValue", "ProfitabilityIndex", "NetPresentValueQuotient", "InternalRateOfReturn"],
+      "AllowedMeasuredProperties": ["EnergyConsumptionTotal"]
+    }
+  },
+  "IndicatorsUnitsSubjects": {
+    "EnergyUseSavingsRelative": "unit:PERCENT",
+    "EnergyUseSavings": "unit:KiloW-HR",
+    "EnergyUseSavingsIntensity": "unit:KiloW-HR-PER-M2",
+    "EnergyCostSavingsRelative": "unit:PERCENT",
+    "EnergyCostSavings": "unit:Euro",
+    "EnergyCostSavingsIntensity": "bigg:Euro-M2",
+    "EnergyEmissionsSavingsRelative": "unit:PERCENT",
+    "EnergyEmissionsSavings": "bigg:KiloGM-CO2",
+    "EnergyEmissionsSavingsIntensity": "bigg:KiloGM-CO2-M2",
+    "NormalisedInvestmentCost": "bigg:Euro-M2",
+    "AvoidanceCost": "bigg:Euro-KiloW-HR",
+    "SimplePayback": "unit:YR",
+    "NetPresentValue": "unit:Euro",
+    "ProfitabilityIndex": "",
+    "NetPresentValueQuotient": "",
+    "InternalRateOfReturn": "unit:PERCENT"
+  },
+  "IndicatorsTimeAggregationFunctions": {
+    "EnergyUseSavingsRelative": "WEIGHTED-AVG",
+    "EnergyUseSavings": "SUM",
+    "EnergyUseSavingsIntensity": "SUM",
+    "EnergyCostSavingsRelative": "WEIGHTED-AVG",
+    "EnergyCostSavings": "SUM",
+    "EnergyCostSavingsIntensity": "SUM",
+    "EnergyEmissionsSavingsRelative": "WEIGHTED-AVG",
+    "EnergyEmissionsSavings": "SUM",
+    "EnergyEmissionsSavingsIntensity": "SUM"
+  },
+  "MeasuredPropertiesDeviceAggregators": {
+    "EnergyImportedGridElectricity": "EnergyActive",
+    "EnergyConsumptionElectricity": "EnergyActive",
+    "EnergyImportedGridGas": "Energy",
+    "EnergyConsumptionGas": "Energy",
+    "EnergyImportedGridDistrictHeating": "Energy",
+    "EnergyConsumptionDistrictHeating": "Energy",
+    "EnergyImportedGridDistrictCooling": "Energy",
+    "EnergyConsumptionDistrictCooling": "Energy",
+    "EnergyImportedGridDistrictHeatingCooling": "Energy",
+    "EnergyConsumptionDistrictHeatingCooling": "Energy"
+  },
+  "CommoditiesDeviceAggregators": {
+    "Electricity": "EnergyActive",
+    "Gas": "Energy",
+    "DistrictHeating": "Energy",
+    "DistrictCooling": "Energy",
+    "DistrictHeatingCooling": "Energy",
+    "Diesel": "Energy",
+    "SolarThermal": "Energy",
+    "Water": "Litres"
+  },
+  "DeviceAggregatorsNames": ["EnergyGridImported", "EnergyGridExported","EnergyConsumption", "EnergyConsumption", "EnergyGenerationSelfConsumption", "EnergyGenerationExported", "EnergyStoredExported", "EnergyStoredSelfConsumed", "EnergyStoredFromGeneration", "EnergyStoredFromGrid"],
+  "Frequencies": ["","P1M","P1Y"],
+  "DataCleaning": {
+    "OutliersDetection": {
+      "window": {
+        "PT1H": "P1M",
+        "P1D": "P6M",
+        "P1M": "P3Y",
+        "P1Y": null
+      },
+      "calendarFeatures": {
+        "PT1H": ["H","HOL"],
+        "P1D": ["U","HOL"],
+        "P1M": ["m"],
+        "P1Y": ["intercept"]
+      },
+      "mode": "upperAndLower",
+      "upperModelPercentile": {
+        "PT1H": 90,
+        "P1D": 80,
+        "P1M": 75,
+        "P1Y": 75
+      },
+      "lowerModelPercentile": {
+        "PT1H": 10,
+        "P1D": 20,
+        "P1M": 25,
+        "P1Y": 25
+      },
+      "upperPercentualThreshold": {
+        "PT1H": 75,
+        "P1D": 50,
+        "P1M": 30,
+        "P1Y": 30
+      },
+      "lowerPercentualThreshold": {
+        "PT1H": 75,
+        "P1D": 50,
+        "P1M": 30,
+        "P1Y": 30
+      }
+    },
+    "CheckForDisruption": {
+      "minIniDate": "2020-03-14",
+      "maxIniDate": "2020-03-23",
+      "minEndDate": "2020-06-21",
+      "maxEndDate": "2022-08-30",
+      "minInitialMonths": 6,
+      "checkFor": "incrementAndDecrement",
+      "minDecrementPercentualAffectation": 30,
+      "minIncrementPercentualAffectation": 120,
+      "defaultPeriod":{
+        "minDate": "2020-03-01",
+        "maxDate": "2020-08-31"
+      }
+    }
+  }
+}
