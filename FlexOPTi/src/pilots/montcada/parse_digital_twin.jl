@@ -64,7 +64,7 @@ is assumed.
 
 # Examples
 parse_colname("AmbTemp_10_l3")   # ("AmbTemp", 3)
-parse_colname("TempSP_10)        # ("TempSP", 0)
+parse_colname("TempSP_10")       # ("TempSP", 0)
 """
 function parse_colname(name::String)
     m = match(r"^(.*)_l(\d+)$", name)
@@ -132,86 +132,6 @@ function collect_lags(cols)
     return Dict(k => sort(collect(v)) for (k, v) in result)
 end
 
-"""
-    find_index_from_datetime(
-        list::AbstractVector,
-        datetime::Union{String, ZonedDateTime, Nothing}
-    ) -> Union{Int, Missing}
-
-Finds the index of an entry whose `"start"` datetime matches the given value.
-
-Each element of `list` is expected to be indexable with `"start"` and to
-contain a datetime string compatible with `ZonedDateTime`.
-
-If `datetime` is:
-- `String` — it is parsed as a `ZonedDateTime`.
-- `Nothing` — the last index of the list is returned.
-
-If no matching datetime is found, `missing` is returned.
-
-# Arguments
-- `list::AbstractVector` — Collection of entries containing `"start"` fields.
-- `datetime::Union{String, ZonedDateTime, Nothing}` — Datetime to search for.
-
-# Returns
-- `Int` — Index of the matching entry.
-- `Missing` — If no match is found.
-
-# Examples
-  schedule = [
-      Dict("start" => "2024-01-01T00:00:00+01:00"),
-      Dict("start" => "2024-01-01T01:00:00+01:00")
-  ]
-  
-  find_index_from_datetime(schedule, "2024-01-01T01:00:00+01:00") # 2
-  find_index_from_datetime(schedule, nothing)                     # 2
-  find_index_from_datetime(schedule, "2024-01-02T00:00:00+01:00") # missing
-"""
-function find_index_from_datetime(list::AbstractVector, datetime::Union{String, ZonedDateTime, Nothing})::Union{Int, Missing}
-
-    if datetime isa String
-        datetime = ZonedDateTime(datetime)
-    end
-
-    # No specification return the last index
-    if datetime === nothing 
-        return length(list)
-    end
-
-    # Otherwise search for closest match
-    if isempty(list)
-        return missing
-    end
-    
-    # If we have a datetime, find the closest match
-    closest_index = 1
-    smallest_diff = typemax(Float64)
-    
-    for (i, entry) in enumerate(list)
-        start_str = entry["start"]                          
-        compute_datetime  = ZonedDateTime(start_str)                
-        
-        # Calculate absolute time difference
-        diff = abs((compute_datetime - datetime) / Second(1))
-        
-        if diff < smallest_diff
-            smallest_diff = diff
-            closest_index = i
-        end
-        
-        # Early exit if we find exact match
-        if diff == 0
-            return i
-        end
-    end
-
-    t_warn = 30*60
-    if smallest_diff > t_warn 
-        @warn "The date used for optimization is more than $(t_warn/60) minutes off..."
-    end
-    
-    return closest_index
-end
 
 """
     find_datetime_index_in_digital_twin(digital_twin, datetime) -> Int or nothing
@@ -268,7 +188,7 @@ function parse_digital_twin(::Montcada, o::O, json_path::String)::Dict{String, A
     colnames_T_heat = data["CoefsTempHeatingColNames"      ]
     colnames_T_cool = data["CoefsTempCoolingColNames"      ]
     colnames_E_heat = data["CoefsHVACEnergyHeatingColNames"]
-    colnames_E_cool = data["CoefsHVACEnergyHeatingColNames"]
+    colnames_E_cool = data["CoefsHVACEnergyCoolingColNames"]
 
     # Process data 
     # Extract information about the columns

@@ -82,7 +82,6 @@ function optimize(digital_twin_file, sensors_file, forecasts_file ;
 
 	# Standard code parameters
 	o = default_code_parameter()
-process_start_datetime
 	# Override defaults from keyword args (kwargs... is a NamedTuple)
 	for (k, v) in kwargs
         if hasproperty(o, k)
