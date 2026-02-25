@@ -142,13 +142,18 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     @variable(model, a[1:Hu, 1:Nr], Bin)    # a = 1 ⇒ Tsp = Tsp | a = 0 ⇒ Tsp = 0 
 
     # Get the previous temperatures
-    prev_temp = filter(digital_twin["TransformedInputsTemperature"][6]) do (k,v)
+    inputs = digital_twin["TransformedInputsTemperature"]
+    inputs_data_idx = find_index_from_datetime(inputs, mpc_start_time)
+    # Select only the 1 lag ambient temperature
+    prev_temp = filter(inputs[inputs_data_idx]) do (k,v)
                     startswith(k,"AmbTemp") && endswith(k, "l1")
                 end
     prev_temp = [kv[2] for kv in sort(collect(prev_temp); by = kv -> parse(Int, match(r"AmbTemp_(\d+)_l1", kv[1]).captures[1]))]
-    # Select the right domain 
+    ## Select the right domain 
+    # For itereation 1 use the known previous temperature
     @constraint(model, SP[1,:] .- prev_temp .- SENSITIVITY .≤  M*h[1,:]        .+ M*(1 .- a[1,:])) # Cooling mode 
     @constraint(model, SP[1,:] .- prev_temp .+ SENSITIVITY .≥ -M*(1 .- h[1,:]) .- M*(1 .- a[1,:])) # Heating mode
+    # For itereation ≥ 2 use the decision temperature
     @constraint(model, [i=2:Hu], SP[i,:] .- T[i-1,:] .- SENSITIVITY .≤  M*h[i,:]        .+ M*(1 .- a[i,:])) # Cooling mode 
     @constraint(model, [i=2:Hu], SP[i,:] .- T[i-1,:] .+ SENSITIVITY .≥ -M*(1 .- h[i,:]) .- M*(1 .- a[i,:])) # Heating mode
     
@@ -161,6 +166,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     # @constraint(model,  a .⇒{SP_transformed .== SP})
     # @constraint(model, ¬a .⇒{SP_transformed .== 0})
 
+    # Preallocate space
     Tbh = Vector{AffExpr}(undef,Hu)
     Tbc = similar(Tbh) 
 
@@ -216,7 +222,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     ################
     ################
 
-    # MPC loop
+    # MPC building loop
     for mpc_step in 1:Hu
         @info "Building MPC constraint t + $(mpc_step-1) to t + $mpc_step."
 
@@ -294,8 +300,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             Tbh[1] = HVAC_inputs_heat["Tbh"]
             Tbc[1] = HVAC_inputs_cool["Tbc"]
         else
-            idx = find_index_from_datetime(forecast_json["TransformedInputsTemperature"], mpc_start_time)
-            outdoorTemperature = forecast_json["TransformedInputsTemperature"][idx + mpc_step - 1]["outdoorTemperature"]
+            forecasts_idx = find_index_from_datetime(forecast_json["TransformedInputsTemperature"], mpc_start_time)
+            outdoorTemperature = forecast_json["TransformedInputsTemperature"][forecasts_idx + mpc_step - 1]["outdoorTemperature"]
             Tbh[mpc_step] = bh[mpc_step] * ( HVAC_inputs_heat["Trefh"] - outdoorTemperature) 
             Tbc[mpc_step] = bc[mpc_step] * (-HVAC_inputs_cool["Trefc"] + outdoorTemperature)
         end
@@ -316,8 +322,9 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             sum(ΔT_map_cool   .* ΔT_cool)
         )
 
-    end
+    end # MPC building loop
 
+    # Power equations
     @constraint(model, power_constraint[mpc_step in 1:Hu],
         p_HVAC[mpc_step] == power_mode[mpc_step] .* p_heat_expr[mpc_step]
             + (1 - power_mode[mpc_step]) .* p_cool_expr[mpc_step]
