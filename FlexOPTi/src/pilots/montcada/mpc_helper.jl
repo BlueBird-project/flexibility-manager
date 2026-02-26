@@ -231,37 +231,6 @@ function mpc_build_input_vector(
         compute_datetime::Union{String,ZonedDateTime}
     )
 
-    function transform_setpoint(SP, SP_part, input_dict)
-        
-        # Find the past operating modes
-        op_modes = digital_twin["HVACStatus"]
-        idx_op = findfirst(d ->
-            ZonedDateTime(d["end"]) == digital_twin["LastEndDateTime"],
-            op_modes
-        )
-        
-        idx = parse(Int, SP_part[2])
-        if length(SP_part) ≥ 3
-            lag = parse(Int, lstrip(SP_part[3],'l'))
-            key = "AmbTemp_$(idx)_l$lag"
-            idx_op = idx_op - lag 
-        else
-            key = "AmbTemp_$idx"
-        end
-
-        T = input_dict[key]
-        
-        op_mode = op_modes[idx_op]["OpMode_$idx"]
-
-        if (op_mode ≥ 3) & (SP - T - SENSITIVITY ≤ 0)
-            return SP
-        elseif (op_mode ≤ 2) & (SP - T + SENSITIVITY ≥ 0)
-            return SP
-        end
-
-        return 0.0
-    end
-
     start_index = digital_twin["StartIndex"];
 
     input_dict = digital_twin["TransformedInputsTemperature"][start_index]
@@ -280,7 +249,7 @@ function mpc_build_input_vector(
             lag = length(parts) == 3 ? parse(Int, lstrip(parts[3],'l')) : 0
 
             SP = sensors[SP_idx-lag][base] + KELVIN_OFFSET 
-            SP = transform_setpoint(SP, parts, input_dict)
+            SP = transform_setpoint(SP, parts, input_dict, digital_twin)
             
             input_vector[mapped_pos] = SP
 
@@ -381,3 +350,33 @@ function mpc_HVAC_info(digital_twin::Dict{String, Any}, backward=0::Int)
 end
 
 
+function transform_setpoint(SP, SP_part, input_dict, digital_twin)
+        
+    # Find the past operating modes
+    op_modes = digital_twin["HVACStatus"]
+    idx_op = findfirst(d ->
+        ZonedDateTime(d["end"]) == digital_twin["LastEndDateTime"],
+        op_modes
+    )
+    
+    idx = parse(Int, SP_part[2])
+    if length(SP_part) ≥ 3
+        lag = parse(Int, lstrip(SP_part[3],'l'))
+        key = "AmbTemp_$(idx)_l$lag"
+        idx_op = idx_op - lag 
+    else
+        key = "AmbTemp_$idx"
+    end
+
+    T = input_dict[key]
+    
+    op_mode = op_modes[idx_op]["OpMode_$idx"]
+
+    if (op_mode ≥ 3) & (SP - T - SENSITIVITY ≤ 0)
+        return SP
+    elseif (op_mode ≤ 2) & (SP - T + SENSITIVITY ≥ 0)
+        return SP
+    end
+
+    return 0.0
+end

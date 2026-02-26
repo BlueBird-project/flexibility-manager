@@ -122,12 +122,12 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     SP_high = constraints[:SP_high]
 
     # Decision Variables 
-    @variable(model, T_low  ≤      T[k=1:Hu, 1:Nr] ≤ T_high         ) # Room temperature 
-    @variable(model, p_low  ≤ p_HVAC[k=1:Hu      ] ≤ p_high         ) # Room power consumption 
-    @variable(model, SP_low ≤     SP[k=1:Hu, 1:Nr] ≤ SP_high        ) # HVAC temperature setpoint
-    @variable(model, 0      ≤ p_grid[k=1:Hu,     ] ≤ transformer_lim) # Power bought from the grid
-    @variable(model, 0      ≤ PVused[k=1:Hu      ] ≤ PV             ) # PV used
-    @variable(model, 0      ≤ PVcurt[k=1:Hu      ] ≤ PV             ) # PV curtailed
+    @variable(model, T_low  ≤      T[k=1:Nr*Hu] ≤ T_high         ) # Room temperature 
+    @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption 
+    @variable(model, SP_low ≤     SP[k=1:Nr*Hu] ≤ SP_high        ) # HVAC temperature setpoint
+    @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
+    @variable(model, 0      ≤ PVused[k=1:Hu   ] ≤ PV             ) # PV used
+    @variable(model, 0      ≤ PVcurt[k=1:Hu   ] ≤ PV             ) # PV curtailed
 
     @variable(model, bh[k=1:Hu], Bin)   # Balance cool
     @variable(model, bc[k=1:Hu], Bin)   # Balance heat
@@ -138,8 +138,17 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
 
     ## Transformation of the setpoints 
     M = 1000     # Big-M constraint -> TODO tune latter 
-    @variable(model, 0.0 .≤ SP_transformed[1:Hu, 1:Nr] ≤ SP_high)
-    @variable(model, a[1:Hu, 1:Nr], Bin)    # a = 1 ⇒ Tsp = Tsp | a = 0 ⇒ Tsp = 0 
+    @variable(model, 0.0 .≤ SP_transformed[1:Nr*Hu] ≤ SP_high)
+    @variable(model, a[1:Nr*Hu], Bin)    # a = 1 ⇒ Tsp = Tsp | a = 0 ⇒ Tsp = 0 
+
+
+
+
+
+
+
+
+
 
     # Get the previous temperatures
     inputs = digital_twin["TransformedInputsTemperature"]
@@ -166,15 +175,40 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     # @constraint(model,  a .⇒{SP_transformed .== SP})
     # @constraint(model, ¬a .⇒{SP_transformed .== 0})
 
+
+    # Batch dynamics 
+    #function dynamics_constraints!(model, ox, power_mode)
+        Mh  = ox.dynamics["heat"].M
+        Ξh  = ox.dynamics["heat"].Ξ
+        Ψh  = ox.dynamics["heat"].Ψ
+        Mc  = ox.dynamics["cool"].M
+        Ξc  = ox.dynamics["cool"].Ξ
+        Ψc  = ox.dynamics["cool"].Ψ
+        ξ1  = ox.dynamics["heat"].ξ1
+        Δ   = ox.dynamics["heat"].Δ  
+
+        Mdyn = 1000 # Big-M
+        h_vec = reshape(h', :)
+        # @constraint(model, T - Ξh * SP_transformed - Mh * ξ1 - Ψh * Δ .≤   Mdyn *   h_vec      )  # Heating Mode 
+        # @constraint(model, T - Ξh * SP_transformed - Mh * ξ1 - Ψh * Δ .≥ - Mdyn *   h_vec      )  # Heating Mode 
+        # @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .≤   Mdyn *  (1 .- h_vec))  # Colling Mode 
+        # @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .≥ - Mdyn *  (1 .- h_vec))  # Colling Mode
+
+        @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .==   0      )  # Cooling Mode 
+        # Todo : We want the dynamic to evolve first according to the real mode, but then to switch all to the majority mode
+        #TODO : Make sure the heating cooling mode is logical. If wrong mode for someone, change the mode
+
+        @infiltrate
+
+        #return nothing
+    #end
+
+    #dynamics_constraints!(model, ox, power_mode)
+
     # Preallocate space
     Tbh = Vector{AffExpr}(undef,Hu)
     Tbc = similar(Tbh) 
 
-    #TODO : Make sure the heating cooling mode is logical. If wrong mode for someone, change the mode
-
-    # Preallocate expressions
-    heat_dyn    = Vector{Vector{JuMP.AffExpr}}(undef, Hu)
-    cool_dyn    = Vector{Vector{JuMP.AffExpr}}(undef, Hu)
     p_heat_expr = Vector{JuMP.AffExpr}(undef, Hu)
     p_cool_expr = Vector{JuMP.AffExpr}(undef, Hu)
 
@@ -222,53 +256,10 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     ################
     ################
 
+
     # MPC building loop
     for mpc_step in 1:Hu
         @info "Building MPC constraint t + $(mpc_step-1) to t + $mpc_step."
-
-        # Temperature state evolution 
-        # Heating model 
-        Ah, Bh, Gh, Fh, input_maph, forecast_map, column_namesh = 
-        mpc_state_dynamics(digital_twin, mpc_step, mpc_start_time; mode="heat")
-        # Get the inputs (spread initial conditions)
-        # TODO : I don't think that forecasts and outputs should be seperated between heat and cool
-        heat_input     = mpc_build_input_vector(
-                digital_twin, sensors_json, input_maph, column_namesh, mpc_start_time
-                )
-
-        # Cooling model
-        Ac, Bc, Gc, Fc, input_mapc, _, column_namesc =  
-        mpc_state_dynamics(digital_twin, mpc_step, mpc_start_time; mode="cool")
-        # Get the inputs (spread initial conditions)
-        cool_input     = mpc_build_input_vector(
-                digital_twin, sensors_json, input_mapc, column_namesc, mpc_start_time
-                )
-
-        # Extract the forecasts
-        forecasts = mpc_build_forecast_vector(
-                forecast_json, forecast_map, column_namesh, mpc_step
-                )
-
-        # Hybrid based on both mode
-        T_lag   = filter(x -> x >  0 && x < mpc_step, digital_twin["CollectedLags"]["AmbTemp"])
-        SP_lag  = filter(x -> x >= 0 && x < mpc_step, digital_twin["CollectedLags"]["TempSP" ])
-        T_prev  = vec(vcat(             T[mpc_step .- T_lag ,:]...)) # Decision state at previous mpc steps
-        SP_prev = vec(vcat(SP_transformed[mpc_step .- SP_lag,:]...)) # Decision setpoints at previous mpc steps
-
-        heat_dyn[mpc_step] = @expression(model,
-            (size(Ah,2) > 0 ? Ah*T_prev : zeros(size(Ah,1))) +
-                Bh*SP_prev + Gh*heat_input + Fh*forecasts
-        )
-
-        cool_dyn[mpc_step] = @expression(model, 
-            (size(Ac,2) > 0 ? Ac*T_prev : zeros(size(Ac,1))) +
-                Bc*SP_prev + Gc*cool_input + Fc*forecasts
-        )
-
-        @constraint(model, 
-            T[mpc_step,:] .== h[mpc_step,:] .* heat_dyn[mpc_step] .+
-                       (1 .- h[mpc_step,:]) .* cool_dyn[mpc_step]
-        )
 
         ## Power state evolution ##
         HVAC_map_heat, ΔT_map_heat, T0_heat, HVAC_inputs_heat =
@@ -278,24 +269,26 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         mpc_power_dynamics(digital_twin, mpc_step, mpc_start_time; mode="cool")
 
         # Build the delta T logic
+        T_mat = reshape(T, Nr, Hu)'
         if isempty(T0_heat)
-            ΔT_heat = T[mpc_step, :]   .- T[mpc_step-1, :]    
+            ΔT_heat = T_mat[mpc_step, :]   .- T_mat[mpc_step-1, :]    
         else
-            ΔT_heat = T[mpc_step, :]   .- T0_heat
+            ΔT_heat = T_mat[mpc_step, :]   .- T0_heat
         end
         if isempty(T0_cool)
-            ΔT_cool = T[mpc_step-1, :] .- T[mpc_step, :]
+            ΔT_cool = T_mat[mpc_step-1, :] .- T_mat[mpc_step, :]
         else
-            ΔT_cool = T0_cool          .- T[mpc_step, :]
+            ΔT_cool = T0_cool          .- T_mat[mpc_step, :]
         end
 
         # Define the transformations
         # TODO : ADD Φ check if the hvac is working or not
         # TODO : If h is a decision variable this is not linear
-        @constraint(model, [r=1:Nr], bh[mpc_step] ≥ a[mpc_step,r]*h[mpc_step,r])
-        @constraint(model,           bh[mpc_step] ≤ sum(a[mpc_step,r]*h[mpc_step,r] for r=1:Nr))
-        @constraint(model, [r=1:Nr], bc[mpc_step] ≥ a[mpc_step,r]*(1-h[mpc_step,r]))
-        @constraint(model,           bc[mpc_step] ≤ sum(a[mpc_step,r]*(1-h[mpc_step,r]) for r=1:Nr))
+        a_mat = reshape(a, Nr, Hu)'
+        @constraint(model, [r=1:Nr], bh[mpc_step] ≥ a_mat[mpc_step,r]*h[mpc_step,r])
+        @constraint(model,           bh[mpc_step] ≤ sum(a_mat[mpc_step,r]*h[mpc_step,r] for r=1:Nr))
+        @constraint(model, [r=1:Nr], bc[mpc_step] ≥ a_mat[mpc_step,r]*(1-h[mpc_step,r]))
+        @constraint(model,           bc[mpc_step] ≤ sum(a_mat[mpc_step,r]*(1-h[mpc_step,r]) for r=1:Nr))
         if mpc_step == 1
             Tbh[1] = HVAC_inputs_heat["Tbh"]
             Tbc[1] = HVAC_inputs_cool["Tbc"]
@@ -337,33 +330,57 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     optimize!(model)
 
     status = termination_status(model)
-    if status != MOI.OPTIMAL
-        @warn "Solver termination status: $status"
+
+    has_solution = (termination_status(model) == MOI.OPTIMAL || 
+                    termination_status(model) == MOI.LOCALLY_SOLVED ||
+                    primal_status(model) == MOI.FEASIBLE_POINT)
+
+    if has_solution
+        # TODO : Rename the symbols as string and use a convention
+        oy = Dict(
+            :OPT_cost       => objective_value(model),
+            :T              => reshape(value.(T),  Nr, Hu)',
+            :SP             => reshape(value.(SP), Nr, Hu)',
+            :SP_transformed => value.(SP_transformed),
+            :p_HVAC         => value.(p_HVAC),
+            :p_grid         => value.(p_grid),
+            :PVused         => value.(PVused),
+            :PVcurt         => value.(PVcurt),
+            :SP_active      => value.(a),
+            :balance_heat   => value.(bh),
+            :balance_cool   => value.(bc),
+            :Tbh            => value.(Tbh),
+            :Tbc            => value.(Tbc),
+            :OPT_status     => status, 
+            :o              => o, 
+            :ox             => ox
+        );
+    else
+       @warn "Solver failed: $status. Returning NaN/Empty dict."
+      
+       oy = Dict(
+           :OPT_cost       => NaN,
+           :T              => fill(NaN, Hu, Nr),
+           :SP             => fill(NaN, Hu, Nr),
+           :SP_transformed => fill(NaN, Hu, Nr),
+           :p_HVAC         => NaN,
+           :p_grid         => NaN,
+           :PVused         => NaN,
+           :PVcurt         => NaN,
+           :SP_active      => fill(NaN, Hu, Nr),
+           :balance_heat   => fill(NaN, Hu),
+           :balance_cool   => fill(NaN, Hu),
+           :Tbh            => fill(NaN, Hu),
+           :Tbc            => fill(NaN, Hu),
+           :OPT_status     => status, 
+           :o              => o, 
+           :ox             => ox
+       )
     end
 
-    # TODO : Rename the symbols as string and use a convention
-    oy = Dict(
-        :OPT_cost       => objective_value(model),
-        :T              => value.(T) ,
-        :SP             => value.(SP),
-        :SP_transformed => value.(SP_transformed),
-        :p_HVAC         => value.(p_HVAC),
-        :p_grid         => value.(p_grid),
-        :PVused         => value.(PVused),
-        :PVcurt         => value.(PVcurt),
-        :SP_active      => value.(a),
-        :balance_heat   => value.(bh),
-        :balance_cool   => value.(bc),
-        :Tbh            => value.(Tbh),
-        :Tbc            => value.(Tbc),
-        :OPT_status     => status, 
-        :o              => o, 
-        :ox             => ox
-    );
-
     # Debug
-    JuMP.write_to_file(model, "/home/kahka/DTU/BlueBird/flexmanager/FlexOPTi/data/model_dump.lp")
-    opt_output_to_file("/home/kahka/DTU/BlueBird/flexmanager/FlexOPTi/data/"*o.output_file, oy; kelvin = false)
+    JuMP.write_to_file(model, joinpath(@__DIR__, "../../../data/")*"model_dump.lp")
+    opt_output_to_file(joinpath(@__DIR__, "../../../data/")*o.output_file, oy; kelvin = false)
 
     return oy 
 
