@@ -18,6 +18,7 @@ using Printf
 using JSON, JSON3
 using JuMP
 using HiGHS, Gurobi
+using LinearAlgebra
 using SparseArrays
 using Symbolics 
 using Logging, LoggingExtras

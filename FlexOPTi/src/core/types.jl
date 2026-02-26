@@ -44,6 +44,7 @@ mutable struct O
     init_condition::Bool
     # name::String
     pilot::Union{String, AbstractBuilding, Nothing}
+    op_modes::Vector{String}
 
     loglevel::String
     logoutput::String
@@ -56,6 +57,21 @@ mutable struct O
 end 
 
 """
+    Used for batch MPC formulation
+
+    X = M⋅ξ1 + Ξ⋅U + Ψ⋅Δ
+    where ξ1 are the initial condition and Δ a stack of the disturbances (forecasts)
+    return BatchDynamics(M, Ξ, Ψ, C, ξ1, Δ)
+"""
+struct BatchDynamics
+   M::Matrix{Float64}   # State mapping   
+   Ξ::Matrix{Float64}   # Control mapping
+   Ψ::Matrix{Float64}   # Disturbance mapping
+   ξ1::Vector{Float64}  # Initial conditions
+   Δ::Vector{Float64}   # Disturbances / Forecasts
+end
+
+"""
 mutable struct OX
 
     OX(digital_twin::Vector{String, Any}, forecast::Vector{String, Any}, constraints::MPConstraints, x0::Vector{Real})
@@ -65,16 +81,17 @@ mutable struct OX
     forecast::Vector{String, Any} : forecasts to be obtained from forecasts API
     constraints::MPConstraints : MPC optimization constraints
 """
-mutable struct OX
+struct OX
     digital_twin::Dict{String, Any}
     sensors::Vector{Dict{String, Any}}
     forecast::Dict{String, Any}
     constraints::Dict{Symbol, Any}
+    dynamics::Dict{String,BatchDynamics}
 end
 
 """
     Depreciated. 
 """
-mutable struct OY
+struct OY
     output_dic::Dict{Symbol, Any} 
 end

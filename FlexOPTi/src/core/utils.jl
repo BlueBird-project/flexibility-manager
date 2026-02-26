@@ -14,7 +14,7 @@ Reorders a list of labels and their associated values according to the numeric i
 # Description
 Sorts labels by the numeric index and optional lag, and reorders the corresponding values. Useful for maintaining consistent column/row ordering in MPC matrices.
 """
-function reorder_labels(labels, values)
+function reorder_labels_old(labels, values)
 
     function parse_generic_label(label)
         m = match(r"(.+?)_(\d+)(?:_l(\d+))?$", label)
@@ -24,9 +24,39 @@ function reorder_labels(labels, values)
     end
 
     order = sortperm(labels; by = lbl -> parse_generic_label(lbl))
-    return labels[order], values[order]
+
+    if isnothing(value)
+        return labels[order], nothing
+    else
+        return labels[order], values[order]
+    end
 end
 
+
+function reorder_labels(labels, values)
+
+    function parse_generic_label(label)
+        # Match "Name_RoomNumber_lLag"
+        # Example: "TempSP_98_l1" -> Name="TempSP", Room=98, Lag=1
+        m = match(r"(.+?)_(\d+)(?:_l(\d+))?$", label)
+        
+        # If no lag is found (e.g., "AmbTemp_98"), it's Lag 0
+        room_num = parse(Int, m.captures[2])
+        lag      = isnothing(m.captures[3]) ? 0 : parse(Int, m.captures[3])
+        
+        # PRIMARY SORT: Lag (0, 1, 2...)
+        # SECONDARY SORT: Room Number (1, 2, 3...)
+        return (lag, room_num)
+    end
+
+    order = sortperm(labels; by = lbl -> parse_generic_label(lbl))
+
+    if isnothing(values)
+        return labels[order], nothing
+    else
+        return labels[order], values[order]
+    end
+end
 
 
 """
