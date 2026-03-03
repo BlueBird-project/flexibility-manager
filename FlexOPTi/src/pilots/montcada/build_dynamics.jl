@@ -25,8 +25,8 @@ function super_batch(o::O,
     end
 
     M = cat(M...; dims=(1,2)) # Block diagonal
-    Ξ = cat(Ξ...; dims= 1   ) # Block diagonal
-    Ψ = cat(Ψ...; dims= 1   ) # Block diagonal
+    Ξ = cat(Ξ...; dims= 1   ) # Block 
+    Ψ = cat(Ψ...; dims= 1   ) # Block 
 
     return BatchDynamics(M, Ξ, Ψ, ξ1, Δ)
 
@@ -59,7 +59,7 @@ function build_batch(o::O,
     # Get all the necessary ingredients
     A, ξ1, C = build_ξ1(digital_twin, sensors, datetime; op_mode=op_mode)
     B        = build_u(digital_twin; op_mode=op_mode)
-    G        = build_G(digital_twin; op_mode=op_mode)
+    G, Δ     = build_GΔ(o, digital_twin, forecast_json; op_mode=op_mode)
 
     # Now augment all to get a big statis description
     M = let
@@ -74,16 +74,6 @@ function build_batch(o::O,
 
     Ξ = batch_B(A, B, C, Hu)
     Ψ = batch_G(A, G, C, Hu)
-
-    Δ = let
-        forecast_map = get_forecast_map(digital_twin; op_mode=op_mode)
-
-        Δ = Float64[]
-        for k in 1:Hu
-            append!(Δ, build_d_inputs(forecast_json, forecast_map, k; op_mode = op_mode))
-        end
-        Δ
-    end
 
     return BatchDynamics(M, Ξ, Ψ, ξ1, Δ)
 end
@@ -109,8 +99,6 @@ function batch_B(A::Matrix, B::Matrix, C::Matrix, Hu::Int)
             Ξ[row_idx, col_idx] = blocks[row - col + 1]
         end
     end
-
-    @infiltrate
 
     return Ξ
 end
@@ -154,18 +142,24 @@ function build_ξ1(digital_twin::Dict{String, Any},
     _, row_order = reorder_labels(row_name, Vector(1:length(row_name)))
 
     # Build Dynamics matrices 
-    A = M[row_order, [idxT; idxu] ] 
+    A_left  = M[row_order, idxT]
+    A_mid   = zeros(length(row_order), nr) # To account for the decision part of the setpoints
+    A_right = M[row_order, idxu]
+
+    A = [A_left A_mid A_right]
 
     # Fill up A for the ξ state space representation
     A = let
         T = eltype(A)
-        n_blocks = nx + nu-1
+        n_blocks = nx + nu
         n_cols   = n_blocks*nr
-    
+
         # 1. Handle the nx identity blocks
         for ii in 1:nx-1
+
             row_block = zeros(T, nr, n_cols)
             row_block[:, (ii-1)*nr+1 : ii*nr] .= I(nr)
+            
             A = [A; row_block]
         end
 
@@ -173,7 +167,7 @@ function build_ξ1(digital_twin::Dict{String, Any},
         A = [A; zeros(T, nr, n_cols)]
 
         # 3. Handle the nu identity blocks (starting from the 2nd index)
-        if nu-1 >= 2
+        if nu-1 >= 1
             for ii in nx+1:nx+nu-1
                 row_block = zeros(T, nr, n_cols)
                 row_block[:, (ii-1)*nr+1 : ii*nr] .= I(nr)
@@ -217,14 +211,17 @@ function build_ξ1(digital_twin::Dict{String, Any},
         SP_val   = collect(values(filtered_SP))
         _, SP_val_sorted = reorder_labels(SP_names, SP_val)
 
+        # Transform to Kelvin 
+        SP_val_sorted = SP_val_sorted .+ KELVIN_OFFSET
+
         append!(u, SP_val_sorted)
     end
 
-    ξ1 = [T_val_sorted ; u]
+    ξ1 = [T_val_sorted ; zeros(nr); u]
 
     # Build the state selection matrix 
     # [xk+1, xk+2, ..., xk+Hu] = C⋅[ξk+1,ξk+2,...,ξk+Hu]
-    C = [I(nr) zeros(nr, nr*(nx+nu-2))]
+    C = [I(nr) zeros(nr, nr*(nx+nu-1))]
 
     return A, ξ1, C
 end
@@ -254,34 +251,38 @@ function build_u(digital_twin::Dict{String, Any}; op_mode)
     B = M[row_order, idx_B1]
 
     nr = size(B, 1)
-    B = [B; zeros(nr*(nx-1+nu-1), nr)]
+    B = [B; zeros(nr*(nx-1), nr); I(nr); zeros(nr*(nu-1), nr)]
 
     return B
 end
 
 # Forecasts
-function build_G(digital_twin::Dict{String, Any} ; op_mode)
+function build_GΔ(o::O, digital_twin::Dict{String, Any},
+                    forecast_json::Dict{String::Any}; op_mode::String)
     # Get the data from the right mode
-    M, colInfoT, colInfoE, row_name = extract_data_dynamics(digital_twin, op_mode)
+    M, colInfoT, _, row_name = extract_data_dynamics(digital_twin, op_mode)
 
     lag_info = digital_twin["CollectedLags"]
     nr = digital_twin["NumberRooms"]   
     nx = length(lag_info["AmbTemp"])
     nu = length(lag_info["TempSP" ])         
 
-    idx_G = Int[]
-    for ci in colInfoT
-        if ci.role == :disturbance 
-            push!(idx_G, ci.index)
-        end
-    end
+    forecast_map = get_forecast_map(digital_twin; op_mode=op_mode)
+
+    disturbance_cols_selected = sort(collect(keys(forecast_map)), by=k -> forecast_map[k])
 
     _, row_order = reorder_labels(row_name, Vector(1:length(row_name)))
 
-    G = M[row_order, idx_G ];
-    G = [G ; zeros(nr*(nx+nu-2),size(G,2))]
+    G = M[row_order, disturbance_cols_selected];
+    G = [G ; zeros(nr*(nx+nu-1),size(G,2))]
 
-    return G
+    # Build the disturbance inputs 
+    Δ = Float64[]
+    for k in 1:o.Hu
+        append!(Δ, build_d_inputs(forecast_json, forecast_map, k; op_mode = op_mode))
+    end
+
+    return G, Δ
 end
 
 
@@ -319,7 +320,7 @@ function build_d_inputs(
     if lowercase(op_mode) == "heat"
         col_names = forecast_json["CoefsTempHeatingColNames"]
     elseif lowercase(op_mode) == "cool"
-        col_names = forecast_json["CoefsTempHeatingColNames"]
+        col_names = forecast_json["CoefsTempCoolingColNames"]
     else
         @error "Unvalid op mode $mode... Choose between 'heat' or 'cool'"
     end

@@ -585,305 +585,305 @@ c1: 1 PVused_1_ + 1 PVcurt_1_ = 0
 c2: 1 PVused_2_ + 1 PVcurt_2_ = 0
 c3: -1 p_HVAC_1_ + 1 p_grid_1_ + 1 PVused_1_ = 0
 c4: -1 p_HVAC_2_ + 1 p_grid_2_ + 1 PVused_2_ = 0
-c5: 1 T_1_ + 0.0013 SP_transformed_1_ = 298.1250952300001
-c6: 1 T_2_ - 0.0028 SP_transformed_2_ - 0.0014 SP_transformed_4_ + 0.0008 SP_transformed_6_ = 296.8399413317546
-c7: 1 T_3_ - 0.0063 SP_transformed_3_ - 0.0003 SP_transformed_4_ + 0.0005 SP_transformed_5_ = 296.83545066
-c8: 1 T_4_ - 0.0008 SP_transformed_2_ + 0.0013 SP_transformed_3_ - 0.0019 SP_transformed_4_ = 297.33203999000006
-c9: 1 T_5_ - 0.001 SP_transformed_3_ - 0.2408 SP_transformed_5_ = 291.3212430733903
-c10: 1 T_6_ - 0.0006 SP_transformed_2_ - 0.0014 SP_transformed_6_ = 297.88324916963285
-c11: 1 T_7_ + 0.0014 SP_transformed_7_ + 0.0015 SP_transformed_9_ = 296.05870823000004
-c12: 1 T_8_ - 0.0009 SP_transformed_8_ + 0.0002 SP_transformed_11_ = 298.82483705999994
-c13: 1 T_9_ - 0.3438 SP_transformed_9_ + 0.0008 SP_transformed_10_ = 195.36763576
-c14: 1 T_10_ + 0.0016 SP_transformed_9_ + 0.0055 SP_transformed_10_ = 299.99884536999997
-c15: 1 T_11_ + 0.0011 SP_transformed_8_ + 0.0027 SP_transformed_11_ = 300.44730471
-c16: 1 T_12_ - 0.018 SP_transformed_12_ + 0.0002 SP_transformed_14_ = 294.8557222400001
-c17: 1 T_13_ - 0.0053 SP_transformed_13_ = 295.6918370300001
-c18: 1 T_14_ + 0.0001 SP_transformed_12_ + 0.0006 SP_transformed_14_ = 296.76694307
-c19: 1 T_15_ + 0.0013 SP_transformed_15_ - 0.0005 SP_transformed_22_ = 297.75686027
-c20: 1 T_16_ - 0.0007 SP_transformed_16_ - 0.0002 SP_transformed_17_ = 300.38765145
-c21: 1 T_17_ + 0.0006 SP_transformed_16_ + 0.0007 SP_transformed_17_ = 300.13686294000007
-c22: 1 T_18_ - 0.0001 SP_transformed_16_ - 0.0321 SP_transformed_18_ = 292.3711939043924
-c23: 1 T_19_ + 0.0001 SP_transformed_17_ + 0.0006 SP_transformed_18_ + 0.0022 SP_transformed_19_ = 299.92802325588065
-c24: 1 T_20_ + 0.0003 SP_transformed_20_ + 0.001 SP_transformed_21_ = 299.71561386
-c25: 1 T_21_ - 0.0012 SP_transformed_21_ - 0.0001 SP_transformed_22_ = 298.40411540589434
-c26: 1 T_22_ - 0.0008 SP_transformed_15_ + 0.0006 SP_transformed_21_ + 0.0003 SP_transformed_22_ = 299.4884957300001
-c27: 1 T_23_ + 0.1075 SP_transformed_23_ = 302.67395088
-c28: 1 T_24_ + 0.0009 SP_transformed_24_ + 0.0022 SP_transformed_25_ + 0.0004 SP_transformed_26_ = 302.38118298
-c29: 1 T_25_ + 0.0003 SP_transformed_24_ + 0.0028 SP_transformed_25_ + 0.0006 SP_transformed_26_ = 303.07061684999996
-c30: 1 T_26_ - 0.0002 SP_transformed_24_ + 0.0016 SP_transformed_25_ + 0.002 SP_transformed_26_ = 302.74547155000005
-c31: 1 T_27_ - 0.002 SP_transformed_27_ + 0.0004 SP_transformed_28_ + 0.0004 SP_transformed_29_ = 297.76619665000004
-c32: 1 T_28_ - 0.0009 SP_transformed_27_ - 0.0023 SP_transformed_28_ + 0.0009 SP_transformed_29_ = 299.25640119
+c5: 1 T_1_ + 0.0013 SP_transformed_1_ = 297.7973152300001
+c6: 1 T_2_ - 0.0028 SP_transformed_2_ - 0.0014 SP_transformed_4_ + 0.0008 SP_transformed_6_ = 295.50150633175457
+c7: 1 T_3_ - 0.0063 SP_transformed_3_ - 0.0003 SP_transformed_4_ + 0.0005 SP_transformed_5_ = 295.05997565999996
+c8: 1 T_4_ - 0.0008 SP_transformed_2_ + 0.0013 SP_transformed_3_ - 0.0019 SP_transformed_4_ = 296.04823499
+c9: 1 T_5_ - 0.001 SP_transformed_3_ - 0.2408 SP_transformed_5_ = 224.9457930733903
+c10: 1 T_6_ - 0.0006 SP_transformed_2_ - 0.0014 SP_transformed_6_ = 297.0091691696328
+c11: 1 T_7_ + 0.0014 SP_transformed_7_ + 0.0015 SP_transformed_9_ = 295.70361323000003
+c12: 1 T_8_ - 0.0009 SP_transformed_8_ + 0.0002 SP_transformed_11_ = 298.30585205999995
+c13: 1 T_9_ - 0.3438 SP_transformed_9_ + 0.0008 SP_transformed_10_ = 194.08383076
+c14: 1 T_10_ + 0.0016 SP_transformed_9_ + 0.0055 SP_transformed_10_ = 299.17939536999995
+c15: 1 T_11_ + 0.0011 SP_transformed_8_ + 0.0027 SP_transformed_11_ = 299.79174471
+c16: 1 T_12_ - 0.018 SP_transformed_12_ + 0.0002 SP_transformed_14_ = 291.2228272400001
+c17: 1 T_13_ - 0.0053 SP_transformed_13_ = 294.2441420300001
+c18: 1 T_14_ + 0.0001 SP_transformed_12_ + 0.0006 SP_transformed_14_ = 296.43916307
+c19: 1 T_15_ + 0.0013 SP_transformed_15_ - 0.0005 SP_transformed_22_ = 297.51102527
+c20: 1 T_16_ - 0.0007 SP_transformed_16_ - 0.0002 SP_transformed_17_ = 299.45894145
+c21: 1 T_17_ + 0.0006 SP_transformed_16_ + 0.0007 SP_transformed_17_ = 299.6998229400001
+c22: 1 T_18_ - 0.0001 SP_transformed_16_ - 0.0321 SP_transformed_18_ = 290.7869239043924
+c23: 1 T_19_ + 0.0001 SP_transformed_17_ + 0.0006 SP_transformed_18_ + 0.0022 SP_transformed_19_ = 299.8733932558806
+c24: 1 T_20_ + 0.0003 SP_transformed_20_ + 0.001 SP_transformed_21_ = 299.38783386
+c25: 1 T_21_ - 0.0012 SP_transformed_21_ - 0.0001 SP_transformed_22_ = 297.53003540589435
+c26: 1 T_22_ - 0.0008 SP_transformed_15_ + 0.0006 SP_transformed_21_ + 0.0003 SP_transformed_22_ = 299.18803073000015
+c27: 1 T_23_ + 0.1075 SP_transformed_23_ = 331.16349587999997
+c28: 1 T_24_ + 0.0009 SP_transformed_24_ + 0.0022 SP_transformed_25_ + 0.0004 SP_transformed_26_ = 302.05340298
+c29: 1 T_25_ + 0.0003 SP_transformed_24_ + 0.0028 SP_transformed_25_ + 0.0006 SP_transformed_26_ = 302.11459184999995
+c30: 1 T_26_ - 0.0002 SP_transformed_24_ + 0.0016 SP_transformed_25_ + 0.002 SP_transformed_26_ = 302.17185655000003
+c31: 1 T_27_ - 0.002 SP_transformed_27_ + 0.0004 SP_transformed_28_ + 0.0004 SP_transformed_29_ = 296.83748665
+c32: 1 T_28_ - 0.0009 SP_transformed_27_ - 0.0023 SP_transformed_28_ + 0.0009 SP_transformed_29_ = 298.6008411900001
 c33: 1 T_29_ - 0.0001 SP_transformed_27_ + 0.0006 SP_transformed_28_ + 0.0011 SP_transformed_29_ = 298.26364863000003
-c34: 1 T_30_ - 0.0013 SP_transformed_30_ + 0.0008 SP_transformed_31_ - 0.0002 SP_transformed_32_ + 0.0007 SP_transformed_33_ + 0.0005 SP_transformed_34_ - 0.0001 SP_transformed_35_ + 0.0007 SP_transformed_36_ = 295.51902955275466
-c35: 1 T_31_ + 0.0008 SP_transformed_30_ + 0.0008 SP_transformed_31_ + 0.0012 SP_transformed_36_ = 295.4252949224622
-c36: 1 T_32_ + 0.001 SP_transformed_30_ + 0.0008 SP_transformed_32_ - 0.0009 SP_transformed_35_ = 297.62157684
-c37: 1 T_33_ + 0.0008 SP_transformed_30_ + 0.0022 SP_transformed_33_ + 0.0006 SP_transformed_34_ = 298.1266378900001
-c38: 1 T_34_ + 0.0018 SP_transformed_30_ + 0.0009 SP_transformed_33_ + 0.0011 SP_transformed_34_ = 296.1774106799999
-c39: 1 T_35_ + 0.0004 SP_transformed_30_ + 0.0001 SP_transformed_32_ - 0.006 SP_transformed_35_ + 0.0001 SP_transformed_36_ = 295.4358898233954
-c40: 1 T_36_ + 0.001 SP_transformed_30_ + 0.0013 SP_transformed_31_ + 0.0007 SP_transformed_35_ - 0.0016 SP_transformed_36_ = 298.79513378000007
-c41: 1 T_37_ + 0.0011947 SP_transformed_1_ + 0.0013 SP_transformed_37_ = 298.5156047763701
-c42: 1 T_38_ - 0.0031432199999999995 SP_transformed_2_ + 0.00017042999999999998 SP_transformed_3_ - 0.0017547899999999998 SP_transformed_4_ + 0.00079754 SP_transformed_6_ - 0.0028 SP_transformed_38_ - 0.0014 SP_transformed_40_ + 0.0008 SP_transformed_42_ = 297.3329594706399
-c43: 1 T_39_ - 0.00018536 SP_transformed_2_ - 0.0069295400000000005 SP_transformed_3_ - 0.00079408 SP_transformed_4_ + 0.04877383 SP_transformed_5_ - 0.0063 SP_transformed_39_ - 0.0003 SP_transformed_40_ + 0.0005 SP_transformed_41_ = 298.62996406016777
-c44: 1 T_40_ - 0.0013373200000000001 SP_transformed_2_ + 0.00266703 SP_transformed_3_ - 0.00283391 SP_transformed_4_ - 6.025e-5 SP_transformed_5_ + 4.664e-5 SP_transformed_6_ - 0.0008 SP_transformed_38_ + 0.0013 SP_transformed_39_ - 0.0019 SP_transformed_40_ = 298.70728272443534
-c45: 1 T_41_ - 0.0018455700000000002 SP_transformed_3_ - 2.8769999999999997e-5 SP_transformed_4_ - 0.29888117 SP_transformed_5_ - 0.001 SP_transformed_39_ - 0.2408 SP_transformed_41_ = 290.20757039780443
-c46: 1 T_42_ - 0.00115046 SP_transformed_2_ - 0.00034342 SP_transformed_4_ - 0.0008855400000000001 SP_transformed_6_ - 0.0006 SP_transformed_38_ - 0.0014 SP_transformed_42_ = 298.4412373363279
-c47: 1 T_43_ + 0.00151382 SP_transformed_7_ + 0.03332031 SP_transformed_9_ - 7.376000000000001e-5 SP_transformed_10_ + 0.0014 SP_transformed_43_ + 0.0015 SP_transformed_45_ = 306.86990458202695
-c48: 1 T_44_ - 0.00096512 SP_transformed_8_ + 0.00023361 SP_transformed_11_ - 0.0009 SP_transformed_44_ + 0.0002 SP_transformed_47_ = 299.26777544653305
-c49: 1 T_45_ + 0.00017276 SP_transformed_7_ - 0.10625567999999998 SP_transformed_9_ + 0.00036491 SP_transformed_10_ - 0.3438 SP_transformed_45_ + 0.0008 SP_transformed_46_ = 165.127783916835
-c50: 1 T_46_ + 0.032480499999999995 SP_transformed_9_ + 0.0058078999999999995 SP_transformed_10_ + 0.0016 SP_transformed_45_ + 0.0055 SP_transformed_46_ = 314.6335600100099
-c51: 1 T_47_ + 0.00049226 SP_transformed_8_ + 0.00236247 SP_transformed_11_ + 0.0011 SP_transformed_44_ + 0.0027 SP_transformed_47_ = 303.69034753949086
-c52: 1 T_48_ - 0.023260959999999997 SP_transformed_12_ + 0.00022864000000000006 SP_transformed_14_ - 0.018 SP_transformed_48_ + 0.0002 SP_transformed_50_ = 293.1213723078081
-c53: 1 T_49_ - 0.00627096 SP_transformed_13_ - 0.0053 SP_transformed_49_ = 296.41596707389607
-c54: 1 T_50_ + 0.0007032099999999999 SP_transformed_12_ + 0.0005621 SP_transformed_14_ + 0.0001 SP_transformed_48_ + 0.0006 SP_transformed_50_ = 298.47203109295504
-c55: 1 T_51_ + 0.0013520799999999999 SP_transformed_15_ + 9.51e-5 SP_transformed_21_ - 0.0005212499999999999 SP_transformed_22_ + 0.0013 SP_transformed_51_ - 0.0005 SP_transformed_58_ = 301.44412636635695
-c56: 1 T_52_ - 0.00063285 SP_transformed_16_ - 0.00023124000000000002 SP_transformed_17_ - 0.0007 SP_transformed_52_ - 0.0002 SP_transformed_53_ = 301.47792571285896
-c57: 1 T_53_ + 0.0005677799999999999 SP_transformed_16_ + 0.0005984 SP_transformed_17_ + 0.0006 SP_transformed_52_ + 0.0007 SP_transformed_53_ = 301.7363990975781
-c58: 1 T_54_ - 9.082e-5 SP_transformed_16_ + 1.376e-5 SP_transformed_17_ - 0.04461257999999999 SP_transformed_18_ - 0.0001 SP_transformed_52_ - 0.0321 SP_transformed_54_ = 281.5585823446266
-c59: 1 T_55_ - 0.00016611 SP_transformed_16_ - 3.222999999999999e-5 SP_transformed_17_ - 0.012718049999999998 SP_transformed_18_ + 0.00248336 SP_transformed_19_ + 0.0001 SP_transformed_53_ + 0.0006 SP_transformed_54_ + 0.0022 SP_transformed_55_ = 298.7718043608346
-c60: 1 T_56_ + 0.00032561999999999994 SP_transformed_20_ + 0.00112884 SP_transformed_21_ + 3.6200000000000005e-6 SP_transformed_22_ + 0.0003 SP_transformed_56_ + 0.001 SP_transformed_57_ = 300.72150944595046
-c61: 1 T_57_ - 4.44e-5 SP_transformed_15_ + 4.0889999999999996e-5 SP_transformed_20_ - 0.0008860399999999999 SP_transformed_21_ - 7.132000000000002e-5 SP_transformed_22_ - 0.0012 SP_transformed_57_ - 0.0001 SP_transformed_58_ = 299.18066329514755
-c62: 1 T_58_ - 0.00105524 SP_transformed_15_ + 0.00065244 SP_transformed_21_ + 0.00039662 SP_transformed_22_ - 0.0008 SP_transformed_51_ + 0.0006 SP_transformed_57_ + 0.0003 SP_transformed_58_ = 300.8743975510189
-c63: 1 T_59_ + 0.1348265 SP_transformed_23_ + 0.1075 SP_transformed_59_ = 304.50508474369605
-c64: 1 T_60_ + 0.00078484 SP_transformed_24_ + 0.00214566 SP_transformed_25_ + 0.00023726000000000002 SP_transformed_26_ + 0.0009 SP_transformed_60_ + 0.0022 SP_transformed_61_ + 0.0004 SP_transformed_62_ = 304.2053226617778
-c65: 1 T_61_ + 0.00055896 SP_transformed_24_ + 0.0027720400000000004 SP_transformed_25_ + 0.0002912399999999999 SP_transformed_26_ + 0.0003 SP_transformed_60_ + 0.0028 SP_transformed_61_ + 0.0006 SP_transformed_62_ = 305.5690284678519
-c66: 1 T_62_ - 1.6100000000000024e-6 SP_transformed_24_ + 0.00162866 SP_transformed_25_ + 0.00108468 SP_transformed_26_ - 0.0002 SP_transformed_60_ + 0.0016 SP_transformed_61_ + 0.002 SP_transformed_62_ = 305.028108078106
-c67: 1 T_63_ - 0.00203516 SP_transformed_27_ + 0.00030361000000000006 SP_transformed_28_ + 0.00047014 SP_transformed_29_ - 0.002 SP_transformed_63_ + 0.0004 SP_transformed_64_ + 0.0004 SP_transformed_65_ = 298.34156053345106
-c68: 1 T_64_ - 0.00070715 SP_transformed_27_ - 0.00267125 SP_transformed_28_ + 0.0006364300000000001 SP_transformed_29_ - 0.0009 SP_transformed_63_ - 0.0023 SP_transformed_64_ + 0.0009 SP_transformed_65_ = 300.0902153221332
-c69: 1 T_65_ - 1.021999999999999e-5 SP_transformed_27_ + 0.0005517699999999999 SP_transformed_28_ + 0.0013603600000000001 SP_transformed_29_ - 0.0001 SP_transformed_63_ + 0.0006 SP_transformed_64_ + 0.0011 SP_transformed_65_ = 299.1096079748949
-c70: 1 T_66_ - 0.0011467599999999997 SP_transformed_30_ + 0.00092724 SP_transformed_31_ - 6.558999999999999e-5 SP_transformed_32_ + 0.00080597 SP_transformed_33_ + 0.00045103000000000005 SP_transformed_34_ - 0.0011398399999999998 SP_transformed_35_ + 0.0005251499999999999 SP_transformed_36_ - 0.0013 SP_transformed_66_ + 0.0008 SP_transformed_67_ - 0.0002 SP_transformed_68_ + 0.0007 SP_transformed_69_ + 0.0005 SP_transformed_70_ - 0.0001 SP_transformed_71_ + 0.0007 SP_transformed_72_ = 296.0059917524313
-c71: 1 T_67_ + 0.0009263600000000001 SP_transformed_30_ + 0.00109913 SP_transformed_31_ - 1.4840000000000002e-5 SP_transformed_32_ + 5.194e-5 SP_transformed_33_ + 3.71e-5 SP_transformed_34_ + 3.213e-5 SP_transformed_35_ + 0.0014110199999999998 SP_transformed_36_ + 0.0008 SP_transformed_66_ + 0.0008 SP_transformed_67_ + 0.0012 SP_transformed_72_ = 297.1951386625973
-c72: 1 T_68_ + 0.0010838 SP_transformed_30_ + 0.00012816000000000002 SP_transformed_31_ + 0.00103012 SP_transformed_32_ + 0.00011214000000000001 SP_transformed_33_ + 8.010000000000001e-5 SP_transformed_34_ - 0.0004479300000000001 SP_transformed_35_ + 9.918000000000001e-5 SP_transformed_36_ + 0.001 SP_transformed_66_ + 0.0008 SP_transformed_68_ - 0.0009 SP_transformed_71_ = 297.93024449851555
-c73: 1 T_69_ + 0.0006106400000000001 SP_transformed_30_ + 0.00011152 SP_transformed_31_ - 2.788e-5 SP_transformed_32_ + 0.0024562300000000002 SP_transformed_33_ + 0.00067477 SP_transformed_34_ - 1.394e-5 SP_transformed_35_ + 9.758e-5 SP_transformed_36_ + 0.0008 SP_transformed_66_ + 0.0022 SP_transformed_69_ + 0.0006 SP_transformed_70_ = 299.0076545675141
-c74: 1 T_70_ + 0.00236819 SP_transformed_30_ - 5.0639999999999996e-5 SP_transformed_31_ + 1.2659999999999999e-5 SP_transformed_32_ + 0.0010243 SP_transformed_33_ + 0.0013607 SP_transformed_34_ + 6.3299999999999995e-6 SP_transformed_35_ - 4.4309999999999994e-5 SP_transformed_36_ + 0.0018 SP_transformed_66_ + 0.0009 SP_transformed_69_ + 0.0011 SP_transformed_70_ = 297.03254345349774
-c75: 1 T_71_ + 0.0008252600000000001 SP_transformed_30_ - 0.00011642 SP_transformed_31_ + 0.00023155000000000002 SP_transformed_32_ - 7.252e-5 SP_transformed_33_ - 5.18e-5 SP_transformed_34_ - 0.00993983 SP_transformed_35_ + 0.00013343 SP_transformed_36_ + 0.0004 SP_transformed_66_ + 0.0001 SP_transformed_68_ - 0.006 SP_transformed_71_ + 0.0001 SP_transformed_72_ = 295.145883578702
-c76: 1 T_72_ + 0.0014090600000000002 SP_transformed_30_ + 0.00152238 SP_transformed_31_ + 4.673e-5 SP_transformed_32_ - 5.838e-5 SP_transformed_33_ - 4.1700000000000004e-5 SP_transformed_34_ - 0.00084112 SP_transformed_35_ - 0.00248049 SP_transformed_36_ + 0.001 SP_transformed_66_ + 0.0013 SP_transformed_67_ + 0.0007 SP_transformed_71_ - 0.0016 SP_transformed_72_ = 299.02468749596306
+c34: 1 T_30_ - 0.0013 SP_transformed_30_ + 0.0008 SP_transformed_31_ - 0.0002 SP_transformed_32_ + 0.0007 SP_transformed_33_ + 0.0005 SP_transformed_34_ - 0.0001 SP_transformed_35_ + 0.0007 SP_transformed_36_ = 295.0546745527547
+c35: 1 T_31_ + 0.0008 SP_transformed_30_ + 0.0008 SP_transformed_31_ + 0.0012 SP_transformed_36_ = 295.0701999224622
+c36: 1 T_32_ + 0.001 SP_transformed_30_ + 0.0008 SP_transformed_32_ - 0.0009 SP_transformed_35_ = 297.40305684
+c37: 1 T_33_ + 0.0008 SP_transformed_30_ + 0.0022 SP_transformed_33_ + 0.0006 SP_transformed_34_ = 297.6349678900001
+c38: 1 T_34_ + 0.0018 SP_transformed_30_ + 0.0009 SP_transformed_33_ + 0.0011 SP_transformed_34_ = 296.0135206799999
+c39: 1 T_35_ + 0.0004 SP_transformed_30_ + 0.0001 SP_transformed_32_ - 0.006 SP_transformed_35_ + 0.0001 SP_transformed_36_ = 293.52383982339546
+c40: 1 T_36_ + 0.001 SP_transformed_30_ + 0.0013 SP_transformed_31_ + 0.0007 SP_transformed_35_ - 0.0016 SP_transformed_36_ = 298.22151878000005
+c41: 1 T_37_ + 0.0011947 SP_transformed_1_ + 0.0013 SP_transformed_37_ = 298.2143749563701
+c42: 1 T_38_ - 0.0031432199999999995 SP_transformed_2_ + 0.00017042999999999998 SP_transformed_3_ - 0.0017547899999999998 SP_transformed_4_ + 0.00079754 SP_transformed_6_ - 0.0028 SP_transformed_38_ - 0.0014 SP_transformed_40_ + 0.0008 SP_transformed_42_ = 295.68591960063986
+c43: 1 T_39_ - 0.00018536 SP_transformed_2_ - 0.0069295400000000005 SP_transformed_3_ - 0.00079408 SP_transformed_4_ + 0.04877383 SP_transformed_5_ - 0.0063 SP_transformed_39_ - 0.0003 SP_transformed_40_ + 0.0005 SP_transformed_41_ = 309.52006122416776
+c44: 1 T_40_ - 0.0013373200000000001 SP_transformed_2_ + 0.00266703 SP_transformed_3_ - 0.00283391 SP_transformed_4_ - 6.025e-5 SP_transformed_5_ + 4.664e-5 SP_transformed_6_ - 0.0008 SP_transformed_38_ + 0.0013 SP_transformed_39_ - 0.0019 SP_transformed_40_ = 296.95908448343533
+c45: 1 T_41_ - 0.0018455700000000002 SP_transformed_3_ - 2.8769999999999997e-5 SP_transformed_4_ - 0.29888117 SP_transformed_5_ - 0.001 SP_transformed_39_ - 0.2408 SP_transformed_41_ = 207.63881871530447
+c46: 1 T_42_ - 0.00115046 SP_transformed_2_ - 0.00034342 SP_transformed_4_ - 0.0008855400000000001 SP_transformed_6_ - 0.0006 SP_transformed_38_ - 0.0014 SP_transformed_42_ = 297.4375176148279
+c47: 1 T_43_ + 0.00151382 SP_transformed_7_ + 0.03332031 SP_transformed_9_ - 7.376000000000001e-5 SP_transformed_10_ + 0.0014 SP_transformed_43_ + 0.0015 SP_transformed_45_ = 306.604307179527
+c48: 1 T_44_ - 0.00096512 SP_transformed_8_ + 0.00023361 SP_transformed_11_ - 0.0009 SP_transformed_44_ + 0.0002 SP_transformed_47_ = 298.70285481103303
+c49: 1 T_45_ + 0.00017276 SP_transformed_7_ - 0.10625567999999998 SP_transformed_9_ + 0.00036491 SP_transformed_10_ - 0.3438 SP_transformed_45_ + 0.0008 SP_transformed_46_ = 164.668916500335
+c50: 1 T_46_ + 0.032480499999999995 SP_transformed_9_ + 0.0058078999999999995 SP_transformed_10_ + 0.0016 SP_transformed_45_ + 0.0055 SP_transformed_46_ = 313.8724685075099
+c51: 1 T_47_ + 0.00049226 SP_transformed_8_ + 0.00236247 SP_transformed_11_ + 0.0011 SP_transformed_44_ + 0.0027 SP_transformed_47_ = 302.89135920599085
+c52: 1 T_48_ - 0.023260959999999997 SP_transformed_12_ + 0.00022864000000000006 SP_transformed_14_ - 0.018 SP_transformed_48_ + 0.0002 SP_transformed_50_ = 288.44392985580805
+c53: 1 T_49_ - 0.00627096 SP_transformed_13_ - 0.0053 SP_transformed_49_ = 294.7030543498961
+c54: 1 T_50_ + 0.0007032099999999999 SP_transformed_12_ + 0.0005621 SP_transformed_14_ + 0.0001 SP_transformed_48_ + 0.0006 SP_transformed_50_ = 298.284054725955
+c55: 1 T_51_ + 0.0013520799999999999 SP_transformed_15_ + 9.51e-5 SP_transformed_21_ - 0.0005212499999999999 SP_transformed_22_ + 0.0013 SP_transformed_51_ - 0.0005 SP_transformed_58_ = 301.11684076785696
+c56: 1 T_52_ - 0.00063285 SP_transformed_16_ - 0.00023124000000000002 SP_transformed_17_ - 0.0007 SP_transformed_52_ - 0.0002 SP_transformed_53_ = 300.75594109585893
+c57: 1 T_53_ + 0.0005677799999999999 SP_transformed_16_ + 0.0005984 SP_transformed_17_ + 0.0006 SP_transformed_52_ + 0.0007 SP_transformed_53_ = 301.4721537875781
+c58: 1 T_54_ - 9.082e-5 SP_transformed_16_ + 1.376e-5 SP_transformed_17_ - 0.04461257999999999 SP_transformed_18_ - 0.0001 SP_transformed_52_ - 0.0321 SP_transformed_54_ = 279.4206591466266
+c59: 1 T_55_ - 0.00016611 SP_transformed_16_ - 3.222999999999999e-5 SP_transformed_17_ - 0.012718049999999998 SP_transformed_18_ + 0.00248336 SP_transformed_19_ + 0.0001 SP_transformed_53_ + 0.0006 SP_transformed_54_ + 0.0022 SP_transformed_55_ = 298.1396205378346
+c60: 1 T_56_ + 0.00032561999999999994 SP_transformed_20_ + 0.00112884 SP_transformed_21_ + 3.6200000000000005e-6 SP_transformed_22_ + 0.0003 SP_transformed_56_ + 0.001 SP_transformed_57_ = 300.39737872995045
+c61: 1 T_57_ - 4.44e-5 SP_transformed_15_ + 4.0889999999999996e-5 SP_transformed_20_ - 0.0008860399999999999 SP_transformed_21_ - 7.132000000000002e-5 SP_transformed_22_ - 0.0012 SP_transformed_57_ - 0.0001 SP_transformed_58_ = 298.35038289764753
+c62: 1 T_58_ - 0.00105524 SP_transformed_15_ + 0.00065244 SP_transformed_21_ + 0.00039662 SP_transformed_22_ - 0.0008 SP_transformed_51_ + 0.0006 SP_transformed_57_ + 0.0003 SP_transformed_58_ = 300.56920705601885
+c63: 1 T_59_ + 0.1348265 SP_transformed_23_ + 0.1075 SP_transformed_59_ = 340.23667208269603
+c64: 1 T_60_ + 0.00078484 SP_transformed_24_ + 0.00214566 SP_transformed_25_ + 0.00023726000000000002 SP_transformed_26_ + 0.0009 SP_transformed_60_ + 0.0022 SP_transformed_61_ + 0.0004 SP_transformed_62_ = 303.80532180177784
+c65: 1 T_61_ + 0.00055896 SP_transformed_24_ + 0.0027720400000000004 SP_transformed_25_ + 0.0002912399999999999 SP_transformed_26_ + 0.0003 SP_transformed_60_ + 0.0028 SP_transformed_61_ + 0.0006 SP_transformed_62_ = 304.75394886785193
+c66: 1 T_62_ - 1.6100000000000024e-6 SP_transformed_24_ + 0.00162866 SP_transformed_25_ + 0.00108468 SP_transformed_26_ - 0.0002 SP_transformed_60_ + 0.0016 SP_transformed_61_ + 0.002 SP_transformed_62_ = 304.45259195410597
+c67: 1 T_63_ - 0.00203516 SP_transformed_27_ + 0.00030361000000000006 SP_transformed_28_ + 0.00047014 SP_transformed_29_ - 0.002 SP_transformed_63_ + 0.0004 SP_transformed_64_ + 0.0004 SP_transformed_65_ = 297.3863713724511
+c68: 1 T_64_ - 0.00070715 SP_transformed_27_ - 0.00267125 SP_transformed_28_ + 0.0006364300000000001 SP_transformed_29_ - 0.0009 SP_transformed_63_ - 0.0023 SP_transformed_64_ + 0.0009 SP_transformed_65_ = 299.4946827661332
+c69: 1 T_65_ - 1.021999999999999e-5 SP_transformed_27_ + 0.0005517699999999999 SP_transformed_28_ + 0.0013603600000000001 SP_transformed_29_ - 0.0001 SP_transformed_63_ + 0.0006 SP_transformed_64_ + 0.0011 SP_transformed_65_ = 299.1464231318949
+c70: 1 T_66_ - 0.0011467599999999997 SP_transformed_30_ + 0.00092724 SP_transformed_31_ - 6.558999999999999e-5 SP_transformed_32_ + 0.00080597 SP_transformed_33_ + 0.00045103000000000005 SP_transformed_34_ - 0.0011398399999999998 SP_transformed_35_ + 0.0005251499999999999 SP_transformed_36_ - 0.0013 SP_transformed_66_ + 0.0008 SP_transformed_67_ - 0.0002 SP_transformed_68_ + 0.0007 SP_transformed_69_ + 0.0005 SP_transformed_70_ - 0.0001 SP_transformed_71_ + 0.0007 SP_transformed_72_ = 295.11573580943127
+c71: 1 T_67_ + 0.0009263600000000001 SP_transformed_30_ + 0.00109913 SP_transformed_31_ - 1.4840000000000002e-5 SP_transformed_32_ + 5.194e-5 SP_transformed_33_ + 3.71e-5 SP_transformed_34_ + 3.213e-5 SP_transformed_35_ + 0.0014110199999999998 SP_transformed_36_ + 0.0008 SP_transformed_66_ + 0.0008 SP_transformed_67_ + 0.0012 SP_transformed_72_ = 296.69935502359726
+c72: 1 T_68_ + 0.0010838 SP_transformed_30_ + 0.00012816000000000002 SP_transformed_31_ + 0.00103012 SP_transformed_32_ + 0.00011214000000000001 SP_transformed_33_ + 8.010000000000001e-5 SP_transformed_34_ - 0.0004479300000000001 SP_transformed_35_ + 9.918000000000001e-5 SP_transformed_36_ + 0.001 SP_transformed_66_ + 0.0008 SP_transformed_68_ - 0.0009 SP_transformed_71_ = 297.80998747951554
+c73: 1 T_69_ + 0.0006106400000000001 SP_transformed_30_ + 0.00011152 SP_transformed_31_ - 2.788e-5 SP_transformed_32_ + 0.0024562300000000002 SP_transformed_33_ + 0.00067477 SP_transformed_34_ - 1.394e-5 SP_transformed_35_ + 9.758e-5 SP_transformed_36_ + 0.0008 SP_transformed_66_ + 0.0022 SP_transformed_69_ + 0.0006 SP_transformed_70_ = 298.4141323955141
+c74: 1 T_70_ + 0.00236819 SP_transformed_30_ - 5.0639999999999996e-5 SP_transformed_31_ + 1.2659999999999999e-5 SP_transformed_32_ + 0.0010243 SP_transformed_33_ + 0.0013607 SP_transformed_34_ + 6.3299999999999995e-6 SP_transformed_35_ - 4.4309999999999994e-5 SP_transformed_36_ + 0.0018 SP_transformed_66_ + 0.0009 SP_transformed_69_ + 0.0011 SP_transformed_70_ = 296.8711036089977
+c75: 1 T_71_ + 0.0008252600000000001 SP_transformed_30_ - 0.00011642 SP_transformed_31_ + 0.00023155000000000002 SP_transformed_32_ - 7.252e-5 SP_transformed_33_ - 5.18e-5 SP_transformed_34_ - 0.00993983 SP_transformed_35_ + 0.00013343 SP_transformed_36_ + 0.0004 SP_transformed_66_ + 0.0001 SP_transformed_68_ - 0.006 SP_transformed_71_ + 0.0001 SP_transformed_72_ = 292.047608684702
+c76: 1 T_72_ + 0.0014090600000000002 SP_transformed_30_ + 0.00152238 SP_transformed_31_ + 4.673e-5 SP_transformed_32_ - 5.838e-5 SP_transformed_33_ - 4.1700000000000004e-5 SP_transformed_34_ - 0.00084112 SP_transformed_35_ - 0.00248049 SP_transformed_36_ + 0.001 SP_transformed_66_ + 0.0013 SP_transformed_67_ + 0.0007 SP_transformed_71_ - 0.0016 SP_transformed_72_ = 297.7881429089631
 power_constraint_1_: 816.9749 T_1_ - 2224.3009 T_2_ + 922.0795 T_3_ + 1870.4671 T_4_ - 3129.5462 T_5_ - 706.3161 T_6_ - 1095.723 T_7_ + 3981.8583 T_8_ - 247.5353 T_9_ + 1038.4737 T_10_ + 105.3698 T_11_ + 2933.7065 T_12_ - 735.0748 T_13_ + 1200.8965 T_14_ + 1683.1343 T_15_ - 2117.1431 T_16_ + 63.2626 T_17_ - 1735.9747 T_18_ + 777.4181 T_19_ + 941.2011 T_20_ - 1750.5061 T_21_ - 1099.3586 T_22_ - 2015.6638 T_23_ - 1126.9093 T_24_ + 852.0715 T_25_ + 1684.7479 T_26_ + 138.7108 T_27_ + 152.2258 T_28_ - 3459.1118 T_29_ - 1498.9871 T_30_ + 404.0817 T_31_ - 645.1048 T_32_ + 1069.5389 T_33_ - 2026.4288 T_34_ + 1963.6369 T_35_ - 53.2628 T_36_ + 1 p_HVAC_1_ = -873067.7245899299
 power_constraint_2_: -816.9749 T_1_ + 2224.3009 T_2_ - 922.0795 T_3_ - 1870.4671 T_4_ + 3129.5462 T_5_ + 706.3161 T_6_ + 1095.723 T_7_ - 3981.8583 T_8_ + 247.5353 T_9_ - 1038.4737 T_10_ - 105.3698 T_11_ - 2933.7065 T_12_ + 735.0748 T_13_ - 1200.8965 T_14_ - 1683.1343 T_15_ + 2117.1431 T_16_ - 63.2626 T_17_ + 1735.9747 T_18_ - 777.4181 T_19_ - 941.2011 T_20_ + 1750.5061 T_21_ + 1099.3586 T_22_ + 2015.6638 T_23_ + 1126.9093 T_24_ - 852.0715 T_25_ - 1684.7479 T_26_ - 138.7108 T_27_ - 152.2258 T_28_ + 3459.1118 T_29_ + 1498.9871 T_30_ - 404.0817 T_31_ + 645.1048 T_32_ - 1069.5389 T_33_ + 2026.4288 T_34_ - 1963.6369 T_35_ + 53.2628 T_36_ + 816.9749 T_37_ - 2224.3009 T_38_ + 922.0795 T_39_ + 1870.4671 T_40_ - 3129.5462 T_41_ - 706.3161 T_42_ - 1095.723 T_43_ + 3981.8583 T_44_ - 247.5353 T_45_ + 1038.4737 T_46_ + 105.3698 T_47_ + 2933.7065 T_48_ - 735.0748 T_49_ + 1200.8965 T_50_ + 1683.1343 T_51_ - 2117.1431 T_52_ + 63.2626 T_53_ - 1735.9747 T_54_ + 777.4181 T_55_ + 941.2011 T_56_ - 1750.5061 T_57_ - 1099.3586 T_58_ - 2015.6638 T_59_ - 1126.9093 T_60_ + 852.0715 T_61_ + 1684.7479 T_62_ + 138.7108 T_63_ + 152.2258 T_64_ - 3459.1118 T_65_ - 1498.9871 T_66_ + 404.0817 T_67_ - 645.1048 T_68_ + 1069.5389 T_69_ - 2026.4288 T_70_ + 1963.6369 T_71_ - 53.2628 T_72_ + 1 p_HVAC_2_ - 2396.9832237000082 bh_2_ - 872.7364636900091 bc_2_ = 45924.9801
 Bounds
-294.15 <= T_1_ <= 303.15
-294.15 <= T_2_ <= 303.15
-294.15 <= T_3_ <= 303.15
-294.15 <= T_4_ <= 303.15
-294.15 <= T_5_ <= 303.15
-294.15 <= T_6_ <= 303.15
-294.15 <= T_7_ <= 303.15
-294.15 <= T_8_ <= 303.15
-294.15 <= T_9_ <= 303.15
-294.15 <= T_10_ <= 303.15
-294.15 <= T_11_ <= 303.15
-294.15 <= T_12_ <= 303.15
-294.15 <= T_13_ <= 303.15
-294.15 <= T_14_ <= 303.15
-294.15 <= T_15_ <= 303.15
-294.15 <= T_16_ <= 303.15
-294.15 <= T_17_ <= 303.15
-294.15 <= T_18_ <= 303.15
-294.15 <= T_19_ <= 303.15
-294.15 <= T_20_ <= 303.15
-294.15 <= T_21_ <= 303.15
-294.15 <= T_22_ <= 303.15
-294.15 <= T_23_ <= 303.15
-294.15 <= T_24_ <= 303.15
-294.15 <= T_25_ <= 303.15
-294.15 <= T_26_ <= 303.15
-294.15 <= T_27_ <= 303.15
-294.15 <= T_28_ <= 303.15
-294.15 <= T_29_ <= 303.15
-294.15 <= T_30_ <= 303.15
-294.15 <= T_31_ <= 303.15
-294.15 <= T_32_ <= 303.15
-294.15 <= T_33_ <= 303.15
-294.15 <= T_34_ <= 303.15
-294.15 <= T_35_ <= 303.15
-294.15 <= T_36_ <= 303.15
-294.15 <= T_37_ <= 303.15
-294.15 <= T_38_ <= 303.15
-294.15 <= T_39_ <= 303.15
-294.15 <= T_40_ <= 303.15
-294.15 <= T_41_ <= 303.15
-294.15 <= T_42_ <= 303.15
-294.15 <= T_43_ <= 303.15
-294.15 <= T_44_ <= 303.15
-294.15 <= T_45_ <= 303.15
-294.15 <= T_46_ <= 303.15
-294.15 <= T_47_ <= 303.15
-294.15 <= T_48_ <= 303.15
-294.15 <= T_49_ <= 303.15
-294.15 <= T_50_ <= 303.15
-294.15 <= T_51_ <= 303.15
-294.15 <= T_52_ <= 303.15
-294.15 <= T_53_ <= 303.15
-294.15 <= T_54_ <= 303.15
-294.15 <= T_55_ <= 303.15
-294.15 <= T_56_ <= 303.15
-294.15 <= T_57_ <= 303.15
-294.15 <= T_58_ <= 303.15
-294.15 <= T_59_ <= 303.15
-294.15 <= T_60_ <= 303.15
-294.15 <= T_61_ <= 303.15
-294.15 <= T_62_ <= 303.15
-294.15 <= T_63_ <= 303.15
-294.15 <= T_64_ <= 303.15
-294.15 <= T_65_ <= 303.15
-294.15 <= T_66_ <= 303.15
-294.15 <= T_67_ <= 303.15
-294.15 <= T_68_ <= 303.15
-294.15 <= T_69_ <= 303.15
-294.15 <= T_70_ <= 303.15
-294.15 <= T_71_ <= 303.15
-294.15 <= T_72_ <= 303.15
+294.15 <= T_1_ <= 302.15
+294.15 <= T_2_ <= 302.15
+294.15 <= T_3_ <= 302.15
+294.15 <= T_4_ <= 302.15
+294.15 <= T_5_ <= 302.15
+294.15 <= T_6_ <= 302.15
+294.15 <= T_7_ <= 302.15
+294.15 <= T_8_ <= 302.15
+294.15 <= T_9_ <= 302.15
+294.15 <= T_10_ <= 302.15
+294.15 <= T_11_ <= 302.15
+294.15 <= T_12_ <= 302.15
+294.15 <= T_13_ <= 302.15
+294.15 <= T_14_ <= 302.15
+294.15 <= T_15_ <= 302.15
+294.15 <= T_16_ <= 302.15
+294.15 <= T_17_ <= 302.15
+294.15 <= T_18_ <= 302.15
+294.15 <= T_19_ <= 302.15
+294.15 <= T_20_ <= 302.15
+294.15 <= T_21_ <= 302.15
+294.15 <= T_22_ <= 302.15
+294.15 <= T_23_ <= 302.15
+294.15 <= T_24_ <= 302.15
+294.15 <= T_25_ <= 302.15
+294.15 <= T_26_ <= 302.15
+294.15 <= T_27_ <= 302.15
+294.15 <= T_28_ <= 302.15
+294.15 <= T_29_ <= 302.15
+294.15 <= T_30_ <= 302.15
+294.15 <= T_31_ <= 302.15
+294.15 <= T_32_ <= 302.15
+294.15 <= T_33_ <= 302.15
+294.15 <= T_34_ <= 302.15
+294.15 <= T_35_ <= 302.15
+294.15 <= T_36_ <= 302.15
+294.15 <= T_37_ <= 302.15
+294.15 <= T_38_ <= 302.15
+294.15 <= T_39_ <= 302.15
+294.15 <= T_40_ <= 302.15
+294.15 <= T_41_ <= 302.15
+294.15 <= T_42_ <= 302.15
+294.15 <= T_43_ <= 302.15
+294.15 <= T_44_ <= 302.15
+294.15 <= T_45_ <= 302.15
+294.15 <= T_46_ <= 302.15
+294.15 <= T_47_ <= 302.15
+294.15 <= T_48_ <= 302.15
+294.15 <= T_49_ <= 302.15
+294.15 <= T_50_ <= 302.15
+294.15 <= T_51_ <= 302.15
+294.15 <= T_52_ <= 302.15
+294.15 <= T_53_ <= 302.15
+294.15 <= T_54_ <= 302.15
+294.15 <= T_55_ <= 302.15
+294.15 <= T_56_ <= 302.15
+294.15 <= T_57_ <= 302.15
+294.15 <= T_58_ <= 302.15
+294.15 <= T_59_ <= 302.15
+294.15 <= T_60_ <= 302.15
+294.15 <= T_61_ <= 302.15
+294.15 <= T_62_ <= 302.15
+294.15 <= T_63_ <= 302.15
+294.15 <= T_64_ <= 302.15
+294.15 <= T_65_ <= 302.15
+294.15 <= T_66_ <= 302.15
+294.15 <= T_67_ <= 302.15
+294.15 <= T_68_ <= 302.15
+294.15 <= T_69_ <= 302.15
+294.15 <= T_70_ <= 302.15
+294.15 <= T_71_ <= 302.15
+294.15 <= T_72_ <= 302.15
 p_HVAC_1_ >= 0
 p_HVAC_2_ >= 0
-292.15 <= SP_1_ <= 303.15
-292.15 <= SP_2_ <= 303.15
-292.15 <= SP_3_ <= 303.15
-292.15 <= SP_4_ <= 303.15
-292.15 <= SP_5_ <= 303.15
-292.15 <= SP_6_ <= 303.15
-292.15 <= SP_7_ <= 303.15
-292.15 <= SP_8_ <= 303.15
-292.15 <= SP_9_ <= 303.15
-292.15 <= SP_10_ <= 303.15
-292.15 <= SP_11_ <= 303.15
-292.15 <= SP_12_ <= 303.15
-292.15 <= SP_13_ <= 303.15
-292.15 <= SP_14_ <= 303.15
-292.15 <= SP_15_ <= 303.15
-292.15 <= SP_16_ <= 303.15
-292.15 <= SP_17_ <= 303.15
-292.15 <= SP_18_ <= 303.15
-292.15 <= SP_19_ <= 303.15
-292.15 <= SP_20_ <= 303.15
-292.15 <= SP_21_ <= 303.15
-292.15 <= SP_22_ <= 303.15
-292.15 <= SP_23_ <= 303.15
-292.15 <= SP_24_ <= 303.15
-292.15 <= SP_25_ <= 303.15
-292.15 <= SP_26_ <= 303.15
-292.15 <= SP_27_ <= 303.15
-292.15 <= SP_28_ <= 303.15
-292.15 <= SP_29_ <= 303.15
-292.15 <= SP_30_ <= 303.15
-292.15 <= SP_31_ <= 303.15
-292.15 <= SP_32_ <= 303.15
-292.15 <= SP_33_ <= 303.15
-292.15 <= SP_34_ <= 303.15
-292.15 <= SP_35_ <= 303.15
-292.15 <= SP_36_ <= 303.15
-292.15 <= SP_37_ <= 303.15
-292.15 <= SP_38_ <= 303.15
-292.15 <= SP_39_ <= 303.15
-292.15 <= SP_40_ <= 303.15
-292.15 <= SP_41_ <= 303.15
-292.15 <= SP_42_ <= 303.15
-292.15 <= SP_43_ <= 303.15
-292.15 <= SP_44_ <= 303.15
-292.15 <= SP_45_ <= 303.15
-292.15 <= SP_46_ <= 303.15
-292.15 <= SP_47_ <= 303.15
-292.15 <= SP_48_ <= 303.15
-292.15 <= SP_49_ <= 303.15
-292.15 <= SP_50_ <= 303.15
-292.15 <= SP_51_ <= 303.15
-292.15 <= SP_52_ <= 303.15
-292.15 <= SP_53_ <= 303.15
-292.15 <= SP_54_ <= 303.15
-292.15 <= SP_55_ <= 303.15
-292.15 <= SP_56_ <= 303.15
-292.15 <= SP_57_ <= 303.15
-292.15 <= SP_58_ <= 303.15
-292.15 <= SP_59_ <= 303.15
-292.15 <= SP_60_ <= 303.15
-292.15 <= SP_61_ <= 303.15
-292.15 <= SP_62_ <= 303.15
-292.15 <= SP_63_ <= 303.15
-292.15 <= SP_64_ <= 303.15
-292.15 <= SP_65_ <= 303.15
-292.15 <= SP_66_ <= 303.15
-292.15 <= SP_67_ <= 303.15
-292.15 <= SP_68_ <= 303.15
-292.15 <= SP_69_ <= 303.15
-292.15 <= SP_70_ <= 303.15
-292.15 <= SP_71_ <= 303.15
-292.15 <= SP_72_ <= 303.15
+292.15 <= SP_1_ <= 302.15
+292.15 <= SP_2_ <= 302.15
+292.15 <= SP_3_ <= 302.15
+292.15 <= SP_4_ <= 302.15
+292.15 <= SP_5_ <= 302.15
+292.15 <= SP_6_ <= 302.15
+292.15 <= SP_7_ <= 302.15
+292.15 <= SP_8_ <= 302.15
+292.15 <= SP_9_ <= 302.15
+292.15 <= SP_10_ <= 302.15
+292.15 <= SP_11_ <= 302.15
+292.15 <= SP_12_ <= 302.15
+292.15 <= SP_13_ <= 302.15
+292.15 <= SP_14_ <= 302.15
+292.15 <= SP_15_ <= 302.15
+292.15 <= SP_16_ <= 302.15
+292.15 <= SP_17_ <= 302.15
+292.15 <= SP_18_ <= 302.15
+292.15 <= SP_19_ <= 302.15
+292.15 <= SP_20_ <= 302.15
+292.15 <= SP_21_ <= 302.15
+292.15 <= SP_22_ <= 302.15
+292.15 <= SP_23_ <= 302.15
+292.15 <= SP_24_ <= 302.15
+292.15 <= SP_25_ <= 302.15
+292.15 <= SP_26_ <= 302.15
+292.15 <= SP_27_ <= 302.15
+292.15 <= SP_28_ <= 302.15
+292.15 <= SP_29_ <= 302.15
+292.15 <= SP_30_ <= 302.15
+292.15 <= SP_31_ <= 302.15
+292.15 <= SP_32_ <= 302.15
+292.15 <= SP_33_ <= 302.15
+292.15 <= SP_34_ <= 302.15
+292.15 <= SP_35_ <= 302.15
+292.15 <= SP_36_ <= 302.15
+292.15 <= SP_37_ <= 302.15
+292.15 <= SP_38_ <= 302.15
+292.15 <= SP_39_ <= 302.15
+292.15 <= SP_40_ <= 302.15
+292.15 <= SP_41_ <= 302.15
+292.15 <= SP_42_ <= 302.15
+292.15 <= SP_43_ <= 302.15
+292.15 <= SP_44_ <= 302.15
+292.15 <= SP_45_ <= 302.15
+292.15 <= SP_46_ <= 302.15
+292.15 <= SP_47_ <= 302.15
+292.15 <= SP_48_ <= 302.15
+292.15 <= SP_49_ <= 302.15
+292.15 <= SP_50_ <= 302.15
+292.15 <= SP_51_ <= 302.15
+292.15 <= SP_52_ <= 302.15
+292.15 <= SP_53_ <= 302.15
+292.15 <= SP_54_ <= 302.15
+292.15 <= SP_55_ <= 302.15
+292.15 <= SP_56_ <= 302.15
+292.15 <= SP_57_ <= 302.15
+292.15 <= SP_58_ <= 302.15
+292.15 <= SP_59_ <= 302.15
+292.15 <= SP_60_ <= 302.15
+292.15 <= SP_61_ <= 302.15
+292.15 <= SP_62_ <= 302.15
+292.15 <= SP_63_ <= 302.15
+292.15 <= SP_64_ <= 302.15
+292.15 <= SP_65_ <= 302.15
+292.15 <= SP_66_ <= 302.15
+292.15 <= SP_67_ <= 302.15
+292.15 <= SP_68_ <= 302.15
+292.15 <= SP_69_ <= 302.15
+292.15 <= SP_70_ <= 302.15
+292.15 <= SP_71_ <= 302.15
+292.15 <= SP_72_ <= 302.15
 0 <= p_grid_1_ <= 100000000
 0 <= p_grid_2_ <= 100000000
 PVused_1_ = 0
 PVused_2_ = 0
 PVcurt_1_ = 0
 PVcurt_2_ = 0
-0 <= SP_transformed_1_ <= 303.15
-0 <= SP_transformed_2_ <= 303.15
-0 <= SP_transformed_3_ <= 303.15
-0 <= SP_transformed_4_ <= 303.15
-0 <= SP_transformed_5_ <= 303.15
-0 <= SP_transformed_6_ <= 303.15
-0 <= SP_transformed_7_ <= 303.15
-0 <= SP_transformed_8_ <= 303.15
-0 <= SP_transformed_9_ <= 303.15
-0 <= SP_transformed_10_ <= 303.15
-0 <= SP_transformed_11_ <= 303.15
-0 <= SP_transformed_12_ <= 303.15
-0 <= SP_transformed_13_ <= 303.15
-0 <= SP_transformed_14_ <= 303.15
-0 <= SP_transformed_15_ <= 303.15
-0 <= SP_transformed_16_ <= 303.15
-0 <= SP_transformed_17_ <= 303.15
-0 <= SP_transformed_18_ <= 303.15
-0 <= SP_transformed_19_ <= 303.15
-0 <= SP_transformed_20_ <= 303.15
-0 <= SP_transformed_21_ <= 303.15
-0 <= SP_transformed_22_ <= 303.15
-0 <= SP_transformed_23_ <= 303.15
-0 <= SP_transformed_24_ <= 303.15
-0 <= SP_transformed_25_ <= 303.15
-0 <= SP_transformed_26_ <= 303.15
-0 <= SP_transformed_27_ <= 303.15
-0 <= SP_transformed_28_ <= 303.15
-0 <= SP_transformed_29_ <= 303.15
-0 <= SP_transformed_30_ <= 303.15
-0 <= SP_transformed_31_ <= 303.15
-0 <= SP_transformed_32_ <= 303.15
-0 <= SP_transformed_33_ <= 303.15
-0 <= SP_transformed_34_ <= 303.15
-0 <= SP_transformed_35_ <= 303.15
-0 <= SP_transformed_36_ <= 303.15
-0 <= SP_transformed_37_ <= 303.15
-0 <= SP_transformed_38_ <= 303.15
-0 <= SP_transformed_39_ <= 303.15
-0 <= SP_transformed_40_ <= 303.15
-0 <= SP_transformed_41_ <= 303.15
-0 <= SP_transformed_42_ <= 303.15
-0 <= SP_transformed_43_ <= 303.15
-0 <= SP_transformed_44_ <= 303.15
-0 <= SP_transformed_45_ <= 303.15
-0 <= SP_transformed_46_ <= 303.15
-0 <= SP_transformed_47_ <= 303.15
-0 <= SP_transformed_48_ <= 303.15
-0 <= SP_transformed_49_ <= 303.15
-0 <= SP_transformed_50_ <= 303.15
-0 <= SP_transformed_51_ <= 303.15
-0 <= SP_transformed_52_ <= 303.15
-0 <= SP_transformed_53_ <= 303.15
-0 <= SP_transformed_54_ <= 303.15
-0 <= SP_transformed_55_ <= 303.15
-0 <= SP_transformed_56_ <= 303.15
-0 <= SP_transformed_57_ <= 303.15
-0 <= SP_transformed_58_ <= 303.15
-0 <= SP_transformed_59_ <= 303.15
-0 <= SP_transformed_60_ <= 303.15
-0 <= SP_transformed_61_ <= 303.15
-0 <= SP_transformed_62_ <= 303.15
-0 <= SP_transformed_63_ <= 303.15
-0 <= SP_transformed_64_ <= 303.15
-0 <= SP_transformed_65_ <= 303.15
-0 <= SP_transformed_66_ <= 303.15
-0 <= SP_transformed_67_ <= 303.15
-0 <= SP_transformed_68_ <= 303.15
-0 <= SP_transformed_69_ <= 303.15
-0 <= SP_transformed_70_ <= 303.15
-0 <= SP_transformed_71_ <= 303.15
-0 <= SP_transformed_72_ <= 303.15
+0 <= SP_transformed_1_ <= 302.15
+0 <= SP_transformed_2_ <= 302.15
+0 <= SP_transformed_3_ <= 302.15
+0 <= SP_transformed_4_ <= 302.15
+0 <= SP_transformed_5_ <= 302.15
+0 <= SP_transformed_6_ <= 302.15
+0 <= SP_transformed_7_ <= 302.15
+0 <= SP_transformed_8_ <= 302.15
+0 <= SP_transformed_9_ <= 302.15
+0 <= SP_transformed_10_ <= 302.15
+0 <= SP_transformed_11_ <= 302.15
+0 <= SP_transformed_12_ <= 302.15
+0 <= SP_transformed_13_ <= 302.15
+0 <= SP_transformed_14_ <= 302.15
+0 <= SP_transformed_15_ <= 302.15
+0 <= SP_transformed_16_ <= 302.15
+0 <= SP_transformed_17_ <= 302.15
+0 <= SP_transformed_18_ <= 302.15
+0 <= SP_transformed_19_ <= 302.15
+0 <= SP_transformed_20_ <= 302.15
+0 <= SP_transformed_21_ <= 302.15
+0 <= SP_transformed_22_ <= 302.15
+0 <= SP_transformed_23_ <= 302.15
+0 <= SP_transformed_24_ <= 302.15
+0 <= SP_transformed_25_ <= 302.15
+0 <= SP_transformed_26_ <= 302.15
+0 <= SP_transformed_27_ <= 302.15
+0 <= SP_transformed_28_ <= 302.15
+0 <= SP_transformed_29_ <= 302.15
+0 <= SP_transformed_30_ <= 302.15
+0 <= SP_transformed_31_ <= 302.15
+0 <= SP_transformed_32_ <= 302.15
+0 <= SP_transformed_33_ <= 302.15
+0 <= SP_transformed_34_ <= 302.15
+0 <= SP_transformed_35_ <= 302.15
+0 <= SP_transformed_36_ <= 302.15
+0 <= SP_transformed_37_ <= 302.15
+0 <= SP_transformed_38_ <= 302.15
+0 <= SP_transformed_39_ <= 302.15
+0 <= SP_transformed_40_ <= 302.15
+0 <= SP_transformed_41_ <= 302.15
+0 <= SP_transformed_42_ <= 302.15
+0 <= SP_transformed_43_ <= 302.15
+0 <= SP_transformed_44_ <= 302.15
+0 <= SP_transformed_45_ <= 302.15
+0 <= SP_transformed_46_ <= 302.15
+0 <= SP_transformed_47_ <= 302.15
+0 <= SP_transformed_48_ <= 302.15
+0 <= SP_transformed_49_ <= 302.15
+0 <= SP_transformed_50_ <= 302.15
+0 <= SP_transformed_51_ <= 302.15
+0 <= SP_transformed_52_ <= 302.15
+0 <= SP_transformed_53_ <= 302.15
+0 <= SP_transformed_54_ <= 302.15
+0 <= SP_transformed_55_ <= 302.15
+0 <= SP_transformed_56_ <= 302.15
+0 <= SP_transformed_57_ <= 302.15
+0 <= SP_transformed_58_ <= 302.15
+0 <= SP_transformed_59_ <= 302.15
+0 <= SP_transformed_60_ <= 302.15
+0 <= SP_transformed_61_ <= 302.15
+0 <= SP_transformed_62_ <= 302.15
+0 <= SP_transformed_63_ <= 302.15
+0 <= SP_transformed_64_ <= 302.15
+0 <= SP_transformed_65_ <= 302.15
+0 <= SP_transformed_66_ <= 302.15
+0 <= SP_transformed_67_ <= 302.15
+0 <= SP_transformed_68_ <= 302.15
+0 <= SP_transformed_69_ <= 302.15
+0 <= SP_transformed_70_ <= 302.15
+0 <= SP_transformed_71_ <= 302.15
+0 <= SP_transformed_72_ <= 302.15
 Binary
 bh_1_
 bh_2_
