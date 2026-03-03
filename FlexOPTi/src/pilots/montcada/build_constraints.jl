@@ -13,11 +13,11 @@ Returns constraints as a NamedTuple with temperatures converted to Kelvin.
 function build_constraints(::Montcada; 
     to_kelvin::Bool = true,
     T_low::Real   = 21.0, 
-    T_high::Real  = 30.0,
+    T_high::Real  = 29.0,
     p_low::Real   = 0.0, 
     p_high::Real  = Inf, 
     SP_low::Real  = 19.0, 
-    SP_high::Real = 30.0
+    SP_high::Real = 29.0
 )
     # Helper function remains internal
     _to_kelvin(x::Real) = x + KELVIN_OFFSET 

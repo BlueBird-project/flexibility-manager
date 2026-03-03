@@ -198,7 +198,23 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # Todo : We want the dynamic to evolve first according to the real mode, but then to switch all to the majority mode
         #TODO : Make sure the heating cooling mode is logical. If wrong mode for someone, change the mode
 
-        @infiltrate
+        selecta = 37
+        count   = 1
+        for i in 1:size(Mc, 2)
+            if Mc[selecta, i] != 0
+                @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Mc[selecta, i], ξ1[i])
+                count += 1 
+            end
+        end
+
+        println("-------------------------------------------")
+
+        for i in 1:size(Ψc, 2)
+            if Ψc[selecta, i] != 0
+                @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Ψc[selecta, i], Δ[i])
+                count += 1 
+            end
+        end
 
         #return nothing
     #end
@@ -341,12 +357,12 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             :OPT_cost       => objective_value(model),
             :T              => reshape(value.(T),  Nr, Hu)',
             :SP             => reshape(value.(SP), Nr, Hu)',
-            :SP_transformed => value.(SP_transformed),
+            :SP_transformed => reshape(value.(SP_transformed), Nr, Hu)',
             :p_HVAC         => value.(p_HVAC),
             :p_grid         => value.(p_grid),
             :PVused         => value.(PVused),
             :PVcurt         => value.(PVcurt),
-            :SP_active      => value.(a),
+            :SP_active      => reshape(value.(a), Nr, Hu)',
             :balance_heat   => value.(bh),
             :balance_cool   => value.(bc),
             :Tbh            => value.(Tbh),
