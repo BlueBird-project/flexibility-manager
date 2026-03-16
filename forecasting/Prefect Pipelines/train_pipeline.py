@@ -4,7 +4,13 @@ import json
 
 
 @flow(name="Train pipeline")
-def main():
+def main(
+    db,
+    list_forges,
+    list_augur,
+    surveil_path,
+    list_assets = None
+):
     
     db = r""
     list_forges = [r"fast_objects\1_forge\anomaly_interpolation.pkl"]
@@ -15,22 +21,9 @@ def main():
     freq = "15T"
 
     project_name = "WeSmart"
-    
-
-    try:
-        with open("params_dict.json") as file:
-            params = json.load(file)
-
-        db = params["db_path"]
-        list_forges = params["forges"]
-        list_augur = params["augurs"]
-        surveil_path = params["surveils"]
-    except:
-        pass
-
 
     # TASK 1 - IMPORT
-    data = GetDataFromDB(db)
+    data = GetDataFromDB(db, list_assets = list_assets)
 
     # TASK 2 - PROCESS
     process_data = data.copy()
@@ -40,7 +33,8 @@ def main():
     # TASK 3 - TRAINING
     results = []
     for augur_pkl in list_augur:
-        res = Train(process_data, augur_pkl, surveil_path, freq, project_name = project_name)
+        res = Train(process_data, augur_pkl, surveil_path, list_assets,
+                    freq, project_name = project_name)
         results.append(res)
     return results
 

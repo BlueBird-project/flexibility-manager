@@ -2,7 +2,7 @@ from prefect import task
 from prefect.artifacts import create_table_artifact
 
 @task
-def GetDataFromDB(db, days_before = None):
+def GetDataFromDB(db, days_before = None, list_ids = None):
 
     """ 
     This task gets information from the NOVA database. The only necessary input is the name of the database.
@@ -14,10 +14,15 @@ def GetDataFromDB(db, days_before = None):
     import pandas as pd
     from datetime import datetime, timedelta
 
+    if list_ids != None:
+        query = f"SELECT * FROM energy_values WHERE asset_id IN {str(tuple(list_ids))}"
+    else:
+        query = """SELECT * FROM energy_values"""
+
     # STEP 1 - CONNECTION AND EXECUTION OF SELECT COMMAND
     con = sqlite3.connect(db)
     cur = con.cursor()
-    results = cur.execute("""SELECT * FROM energy_values""")
+    results = cur.execute(query)
     rows = results.fetchall()
     con.close()
 
@@ -58,7 +63,19 @@ def Process(data, forge_path: str):
     return pd.concat(list_data, ignore_index=True) if len(list_data) > 0 else data
 
 @task
-def Train(data, path_augur, path_surveil, freq="1h", days_threshold=15, project_name = ""):
+def Train(data, path_augur, path_surveil, list_assets,
+          freq="1h", days_threshold=15, project_name = ""):
+
+    """
+    It trains the model based on the Augur object. The Surveil object will check the metrics
+    and if the model is good enough, the model will be saved as put in the Augur. If there was 
+    a filter by assets it will be saved in the configuration file of the model.
+    
+    :param data: pandas dataframe to use.
+    :param path_augur: Path of the forge object to be used in this process.
+    :param 
+    
+    """
 
     from datetime import timedelta
     import pandas as pd
@@ -102,7 +119,7 @@ def Train(data, path_augur, path_surveil, freq="1h", days_threshold=15, project_
 
     if True:
         try:
-            augur.save(project_name)
+            augur.save(project_name, list_assets)
         except Exception as e:
             print(f"message: {e}")
 
