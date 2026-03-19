@@ -73,17 +73,17 @@ The reward is constructed from:
 This combination will encourage the agent to get minimum costs, minimum unmet energy, and respect charging deadlines.
 
 
-## How to run the project
+# How to run the project
 Follow this guide to run the project.
 ### Install Python
 First, python is required. Download python from the **OFFICIAL WEBSITE**.
 
-### Create and activate a virtual environment
+## Create and activate a virtual environment
 The virtual environment is used to install the required packages. For creating it, run from command line:
 
 ```python -m venv .venv```
 
-### Activate the virtual environment
+## Activate the virtual environment
 To activate the virtual environment, run from command line (WINDOWS):
 
 ```.venv\Scripts\activate```
@@ -92,12 +92,12 @@ or from macOS/Linux:
 
 ```source .venv/bin/activate```
 
-### Install dependencies
+## Install dependencies
 To install the required packages and dependencies, run:
 
 ```pip install -r requirements.txt```
 
-### Train a new model
+## Train a new model
 For training the model, by using the default datasets saved in the folder, run:
 
 ```python main.py train```
@@ -128,7 +128,7 @@ You can also specify these optional arguments:
 ~~~
    
 
-### Test the model
+## Test the model
 To test the model, by using the models saved in [saved_models](saved_models), run:
 
 ```python main.py test```
