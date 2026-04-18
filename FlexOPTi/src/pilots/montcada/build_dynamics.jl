@@ -241,20 +241,21 @@ function build_ξ1(digital_twin::Dict{String, Any},
     # end
 
     u = Float64[]
-    
-    for lag in lag_info["TempSP"][begin:end-1]
+
+    for lag in lag_info["TempSP"][begin+1:end]
         sensor_var = sensors[sensor_datetime_idx - lag]
         filtered_SP = filter(p -> startswith(p.first, "TempSP") && p.first != excluded_SP, sensor_var)
 
-        # Then proceed as before:
         SP_names = collect(keys(filtered_SP))
         SP_val   = collect(values(filtered_SP))
-        _, SP_val_sorted = reorder_labels(SP_names, SP_val)
+        SP_names_sorted, SP_val_sorted = reorder_labels(SP_names, SP_val)
 
-        # Transform to Kelvin 
-        SP_val_sorted = SP_val_sorted .+ KELVIN_OFFSET
-
-        append!(u, SP_val_sorted)
+        for (name, SP_raw) in zip(SP_names_sorted, SP_val_sorted)
+            SP    = SP_raw + KELVIN_OFFSET
+            parts = vcat(split(name, "_"), ["l$lag"])
+            SP    = transform_setpoint(SP, parts, dt_var, digital_twin)
+            push!(u, SP)
+        end
     end
 
     ξ1 = [T_val_sorted ; u; zeros(nr)]
