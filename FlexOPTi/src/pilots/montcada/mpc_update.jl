@@ -315,10 +315,10 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             sum(ΔT_map_heat   .* ΔT_heat)
         )
         p_cool_expr[mpc_step] = @expression(model,
-            HVAC_map_cool["intercept"] * HVAC_inputs_heat["intercept"] +
+            HVAC_map_cool["intercept"] * HVAC_inputs_cool["intercept"] +
             HVAC_map_cool["ComfTempHeating"] * Tbh[mpc_step] +
             HVAC_map_cool["ComfTempCooling"] * Tbc[mpc_step] +
-            HVAC_map_cool["nhvac"]  * HVAC_inputs_heat["nhvac"] +
+            HVAC_map_cool["nhvac"]  * HVAC_inputs_cool["nhvac"] +
             sum(ΔT_map_cool   .* ΔT_cool)
         )
 
