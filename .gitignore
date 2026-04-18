@@ -419,6 +419,8 @@ $RECYCLE.BIN/
 /FlexOPTi/.github/
 /FlexOPTi/.gitignore
 /FlexOPTi/.vscode/
+/FlexOPTi/*.txt
+/FlexOPTi/*.lp
 Project.toml
 Manifest.toml
 

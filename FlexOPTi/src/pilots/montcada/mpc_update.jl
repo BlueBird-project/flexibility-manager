@@ -158,13 +158,18 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
                     startswith(k,"AmbTemp") && endswith(k, "l1")
                 end
     prev_temp = [kv[2] for kv in sort(collect(prev_temp); by = kv -> parse(Int, match(r"AmbTemp_(\d+)_l1", kv[1]).captures[1]))]
-    ## Select the right domain 
+
+    SP_mat = reshape(SP, Nr, Hu)'
+    T_mat_full = reshape(T, Nr, Hu)'
+    a_mat_full = reshape(a, Nr, Hu)'
+
+    ## Select the right domain
     # For itereation 1 use the known previous temperature
-    @constraint(model, SP[1,:] .- prev_temp .- SENSITIVITY .≤  M*h[1,:]        .+ M*(1 .- a[1,:])) # Cooling mode 
-    @constraint(model, SP[1,:] .- prev_temp .+ SENSITIVITY .≥ -M*(1 .- h[1,:]) .- M*(1 .- a[1,:])) # Heating mode
+    @constraint(model, SP_mat[1,:] .- prev_temp .- SENSITIVITY .≤  M*h[1,:]        .+ M*(1 .- a_mat_full[1,:])) # Cooling mode
+    @constraint(model, SP_mat[1,:] .- prev_temp .+ SENSITIVITY .≥ -M*(1 .- h[1,:]) .- M*(1 .- a_mat_full[1,:])) # Heating mode
     # For itereation ≥ 2 use the decision temperature
-    @constraint(model, [i=2:Hu], SP[i,:] .- T[i-1,:] .- SENSITIVITY .≤  M*h[i,:]        .+ M*(1 .- a[i,:])) # Cooling mode 
-    @constraint(model, [i=2:Hu], SP[i,:] .- T[i-1,:] .+ SENSITIVITY .≥ -M*(1 .- h[i,:]) .- M*(1 .- a[i,:])) # Heating mode
+    @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .- SENSITIVITY .≤  M*h[i,:]        .+ M*(1 .- a_mat_full[i,:])) # Cooling mode
+    @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .+ SENSITIVITY .≥ -M*(1 .- h[i,:]) .- M*(1 .- a_mat_full[i,:])) # Heating mode
     
     # Select the right control law
     @constraint(model, SP_transformed .≤  a   * M         )
@@ -198,23 +203,23 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # Todo : We want the dynamic to evolve first according to the real mode, but then to switch all to the majority mode
         #TODO : Make sure the heating cooling mode is logical. If wrong mode for someone, change the mode
 
-        selecta = 37
-        count   = 1
-        for i in 1:size(Mc, 2)
-            if Mc[selecta, i] != 0
-                @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Mc[selecta, i], ξ1[i])
-                count += 1 
-            end
-        end
+        # selecta = 37
+        # count   = 1
+        # for i in 1:size(Mc, 2)
+        #     if Mc[selecta, i] != 0
+        #         @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Mc[selecta, i], ξ1[i])
+        #         count += 1 
+        #     end
+        # end
 
-        println("-------------------------------------------")
+        # println("-------------------------------------------")
 
-        for i in 1:size(Ψc, 2)
-            if Ψc[selecta, i] != 0
-                @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Ψc[selecta, i], Δ[i])
-                count += 1 
-            end
-        end
+        # for i in 1:size(Ψc, 2)
+        #     if Ψc[selecta, i] != 0
+        #         @printf("%-5d | %-5d | %10.5f | %10.5f\n", count, i, Ψc[selecta, i], Δ[i])
+        #         count += 1 
+        #     end
+        # end
 
         #return nothing
     #end
@@ -324,10 +329,10 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             sum(ΔT_map_heat   .* ΔT_heat)
         )
         p_cool_expr[mpc_step] = @expression(model,
-            HVAC_map_cool["intercept"] * HVAC_inputs_heat["intercept"] +
+            HVAC_map_cool["intercept"] * HVAC_inputs_cool["intercept"] +
             HVAC_map_cool["ComfTempHeating"] * Tbh[mpc_step] +
             HVAC_map_cool["ComfTempCooling"] * Tbc[mpc_step] +
-            HVAC_map_cool["nhvac"]  * HVAC_inputs_heat["nhvac"] +
+            HVAC_map_cool["nhvac"]  * HVAC_inputs_cool["nhvac"] +
             sum(ΔT_map_cool   .* ΔT_cool)
         )
 

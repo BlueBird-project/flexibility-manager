@@ -242,7 +242,6 @@ function build_ξ1(digital_twin::Dict{String, Any},
 
     u = Float64[]
     
-
     for lag in lag_info["TempSP"][begin:end-1]
         sensor_var = sensors[sensor_datetime_idx - lag]
         filtered_SP = filter(p -> startswith(p.first, "TempSP") && p.first != excluded_SP, sensor_var)
