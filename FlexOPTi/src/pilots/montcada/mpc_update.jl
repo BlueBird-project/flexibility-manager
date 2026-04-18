@@ -363,7 +363,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
 
     # Debug
     JuMP.write_to_file(model, "/home/kahka/DTU/BlueBird/flexmanager/FlexOPTi/data/model_dump.lp")
-    opt_output_to_file("/home/kahka/DTU/BlueBird/flexmanager/FlexOPTi/data/"*o.output_file, oy; kelvin = false)
+    opt_output_to_file(joinpath(@__DIR__, "../../..", "data", o.output_file), oy; kelvin = false)
+    opt_output_to_file(joinpath(@__DIR__, "../../..", "data", o.output_file), oy; kelvin = false)
 
     return oy 
 
