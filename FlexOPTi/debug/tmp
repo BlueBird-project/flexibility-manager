@@ -1,0 +1,52 @@
+ Now I have the complete picture. The difference is very specific and comes from  
+  two lines in the batch branch.                                                   
+                                                                                   
+  ---                                                                              
+  The Bug: Disturbance Index Mismatch                                              
+                                                                                   
+  In build_dynamics.jl:370, build_d_inputs for step k reads from:                  
+  forecast_dict = forecast_json["TransformedInputsTemperature"][datetime_index + k 
+  - 1]                                                                             
+  For k=2 it reads from start_index + 1.                                           
+                                                                                   
+  In mpc_build_input_vector (used by main), it always reads from:                  
+  input_dict = digital_twin["TransformedInputsTemperature"][start_index]         
+  Same dict for both mpc_step=1 and mpc_step=2.                                    
+                                                                                   
+  At step 1 (k=1), both read from start_index → identical → same constant → same   
+  room temperatures.                                                               
+                                                                                   
+  At step 2 (k=2), the batch reads from start_index+1 while the main reads from    
+  start_index. For a lag-1 disturbance like "outdoorTemperature_l1":               
+  - data[start_index]["outdoorTemperature_l1"] = d(k−1)                            
+  - data[start_index+1]["outdoorTemperature_l1"] = d(k)                           
+                                                                                   
+  That single timestep shift in outdoor temperature (and other disturbances)     
+  produces the 0.403 K difference in the constant term for room 1 at t=2.          
+                                                                                   
+  ---                                                                              
+  Secondary Bug: Wrong Δ in the batch constraint (lines 192–193)                   
+                                                                                   
+  ξ1 = ox.dynamics["heat"].ξ1   # ← uses heating initial conditions                
+  Δ  = ox.dynamics["heat"].Δ    # ← uses heating disturbance vector                
+                                                                                   
+  But the constraint uses cooling matrices (Mc, Ξc, Ψc). The forecast_map that  
+  ordered Δ was built from the heating model's column indices, while Ψc expects the
+   cooling model's column ordering. If those disturbance columns appear in a       
+  different order in the two models (which is likely since they're separate ARX
+  estimates), Ψc * Δ_heat mismatches values.                                       
+                                                                                   
+  The fix:                                                                        
+  ξ1 = ox.dynamics["cool"].ξ1                                                      
+  Δ  = ox.dynamics["cool"].Δ                                                     
+                                                                                   
+  ---                                                                            
+  Which is more correct?                                                           
+                                                                                   
+  For T(k+2), the lag-1 disturbance should ideally be d(k+1) (a true 1-step        
+  forecast). The batch uses d(k) (off by 1), the main uses d(k−1) (off by 2). The  
+  batch is closer to the correct ARX prediction, but both formulations don't fully 
+  handle multi-step disturbance look-ahead. The mpc_build_input_vector approach is
+  conceptually wrong for step ≥ 2 because it reuses the same lagged data that was 
+  computed relative to time k, not relative to k+s. 
+

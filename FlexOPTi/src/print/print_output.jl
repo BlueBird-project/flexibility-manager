@@ -27,7 +27,7 @@ function opt_output_to_file(filename::String, opt_output::Dict{Symbol, Any} ;
                     for j in axes(mat, 2)    # printed col index
                         orig_row = j         # original (before transpose)
                         orig_col = i
-                        @printf(io, "[%d,%d] %8.2f  ", orig_row, orig_col, mat[i, j])
+                        @printf(io, "[%d,%2d] %8.2f  ", orig_row, orig_col, mat[i, j])
                     end
                     println(io)
                 end
