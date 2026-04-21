@@ -20,11 +20,14 @@ function build_batch(o::O,
 
     # Note all put in the OX structure all of it
 
+    # Extract state-space information
+    ss = digital_twin["state_space"]
+
     # Get all the necessary ingredients
-    A  = digital_twin["A" ]
-    x1 = digital_twin["x1"]
-    B  = digital_twin["B" ]
-    E  = digital_twin["E" ]
+    A  = ss["A" ]
+    x1 = ss["x1"]
+    B  = ss["B" ]
+    E  = ss["E" ]
 
     # Add forecasted disturbances
     # Δ = get_forecasts()
@@ -41,7 +44,7 @@ function build_batch(o::O,
     end
 
     Ξ = batch_B(A, B, Hu)
-    Ψ = batch_E(A, G, Hu)
+    Ψ = batch_E(A, E, Hu)
 
     return BatchDynamics(M, Ξ, Ψ, x1, Δ)
 end
