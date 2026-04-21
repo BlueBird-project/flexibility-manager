@@ -1,14 +1,13 @@
 """
     Transform a MIMO ARX model over a horizon Hu in a batch static evolution
 
-    X  = M ⋅ ξk + Ξ ⋅ U + Ψ ⋅ Δ
-    ξk := [xk, xk-1, ...., xk-N, uk-1, ..., uk-M] is the stacked ARX inputs (initial condition)
+    X  = M ⋅ xk + Ξ ⋅ U + Ψ ⋅ Δ
     X  := [xk+1, xk+2, ...., xk+Hu] are the stacked states (decision variable)
     U  := [uk, uk+1, ..., uHu-1]    are the stacked controllable inputs (decision variable)
     D  := [dk, dk+1, ...., dHu-1]   are the stacked disturbances (forecasts) (known numbers)
 
-    The ARX augmented state evolves according to 
-    ξk+1 = A⋅ξk + B⋅uk + G⋅dk
+    The  state evolves according to 
+    xk+1 = A⋅xk + B⋅uk + G⋅dk
 """
 function build_batch(o::O,
                      digital_twin::Dict{String, Any},
@@ -42,7 +41,7 @@ function build_batch(o::O,
     end
 
     Ξ = batch_B(A, B, Hu)
-    Ψ = batch_G(A, G, Hu)
+    Ψ = batch_E(A, G, Hu)
 
     return BatchDynamics(M, Ξ, Ψ, x1, Δ)
 end
@@ -73,6 +72,6 @@ function batch_B(A::Matrix, B::Matrix, Hu::Int)
     return Ξ
 end
 
-function batch_E(A::Matrix, G::Matrix, C::Matrix, Hu::Int)
+function batch_E(A::Matrix, G::Matrix, Hu::Int)
     return batch_B(A, G, Hu)
 end
