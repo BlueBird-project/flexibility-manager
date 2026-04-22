@@ -1,4 +1,17 @@
 """
+    build_dynamics(::Ewh, o, digital_twin, sensors, forecasts) -> BatchDynamics
+
+Build batch dynamics for the EWH pilot (single operating mode).
+"""
+function build_dynamics(::Ewh, o::O,
+                        digital_twin::Dict{String, Any},
+                        sensors::Vector{Dict{String, Any}},
+                        forecasts::Dict{String, Any})
+    build_batch(o, digital_twin, sensors, forecasts)
+end
+
+
+"""
     Transform a MIMO ARX model over a horizon Hu in a batch static evolution
 
     X  = M ⋅ xk + Ξ ⋅ U + Ψ ⋅ Δ
@@ -12,8 +25,7 @@
 function build_batch(o::O,
                      digital_twin::Dict{String, Any},
                      sensors::Vector{Dict{String, Any}},
-                     forecast_json::Dict{String, Any};
-                     op_mode=op_mode::String)
+                     forecast_json::Dict{String, Any})
 
     datetime = o.compute_datetime
     Hu = o.Hu
