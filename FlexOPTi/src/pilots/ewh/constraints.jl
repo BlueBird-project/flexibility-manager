@@ -47,23 +47,23 @@ function build_constraints(::Ewh;
     T_freezer_low::Float64                     = -40.0,
     T_freezer_high::Float64                    = -18.0,
     # --- Setpoints [°C] ---
-    SP_fridge_diary_low::Float64               = 0.0,
+    SP_fridge_diary_low::Float64               = 2.0,
     SP_fridge_diary_high::Float64              = 8.0,
-    SP_fridge_finished_products_low::Float64   = 0.0,
+    SP_fridge_finished_products_low::Float64   = 2.0,
     SP_fridge_finished_products_high::Float64  = 7.0,
-    SP_fridge_meat_low::Float64                = 0.0,
+    SP_fridge_meat_low::Float64                = 2.0,
     SP_fridge_meat_high::Float64               = 5.0,
-    SP_fridge_vegetables_low::Float64          = 0.0,
+    SP_fridge_vegetables_low::Float64          = 2.0,
     SP_fridge_vegetables_high::Float64         = 7.0,
-    SP_freezer_low::Float64                    = 0.0,
+    SP_freezer_low::Float64                    = -40.0,
     SP_freezer_high::Float64                   = -18.0,
     # --- Power [kW] ---
-    p_fridge_1_low::Float64                    = 0.0,
-    p_fridge_1_high::Float64                   = 3.0,
-    p_fridge_2_low::Float64                    = 0.0,
-    p_fridge_2_high::Float64                   = 3.0,
-    p_freezer_low::Float64                     = 0.0,
-    p_freezer_high::Float64                    = 5.0,
+    p1_low::Float64                            = 0.0, # Fridges
+    p1_high::Float64                           = 3.0, # Fridges
+    p2_low::Float64                            = 0.0, # Fridges
+    p2_high::Float64                           = 3.0, # Fridges 
+    p3_low::Float64                            = 0.0, # Freezer 
+    p3_high::Float64                           = 5.0, # Freezer
 )
 
     _to_kelvin(x::Float64) = to_kelvin ? x + KELVIN_OFFSET : x
@@ -92,11 +92,11 @@ function build_constraints(::Ewh;
         :SP_freezer_low                    => _to_kelvin(SP_freezer_low),
         :SP_freezer_high                   => _to_kelvin(SP_freezer_high),
         # --- Power ---
-        :p_fridge_1_low                    => p_fridge_1_low,
-        :p_fridge_1_high                   => p_fridge_1_high,
-        :p_fridge_2_low                    => p_fridge_2_low,
-        :p_fridge_2_high                   => p_fridge_2_high,
-        :p_freezer_low                     => p_freezer_low
-        :p_freezer_high                    => p_freezer_high,
+        :p1_low                            => p1_low,
+        :p1_high                           => p1_high,
+        :p2_low                            => p2_low,
+        :p2_high                           => p2_high,
+        :p3_low                            => p3_low
+        :p3_high                           => p3_high,
     )
 end

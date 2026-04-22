@@ -1,4 +1,3 @@
-
 function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
 
     digital_twin  = ox.digital_twin
@@ -54,15 +53,15 @@ function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     SP_fridge_meat_high = constraints[:SP_fridge_meat_high]               
     SP_fridge_vegetables_low = constraints[:SP_fridge_vegetables_low]          
     SP_fridge_vegetables_high = constraints[:SP_fridge_vegetables_high]         
-    SP_freezer_low = constraints[:SP_freezer_low]                    
-    SP_freezer_high = constraints[:SP_freezer_high]                   
+    Sp3_low = constraints[:Sp3_low]                    
+    Sp3_high = constraints[:Sp3_high]                   
     # --- Power ---
-    p_fridge_1_low = constraints[:p_fridge_1_low]                    
-    p_fridge_1_high = constraints[:p_fridge_1_high]                   
-    p_fridge_2_low = constraints[:p_fridge_2_low]                    
-    p_fridge_2_high = constraints[:p_fridge_2_high]                  
-    p_freezer_low = constraints[:p_freezer_low]                    
-    p_freezer_high = constraints[:p_freezer_high]                    
+    p1_low = constraints[:p1_low]                    
+    p1_high = constraints[:p1_high]                   
+    p2_low = constraints[:p2_low]                    
+    p2_high = constraints[:p2_high]                  
+    p3_low = constraints[:p3_low]                    
+    p3_high = constraints[:p3_high]                    
 
     # Stack the constraints
     # State 
@@ -77,7 +76,7 @@ function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     @variable(model, u_req[i=1,nfridge, t=1:Hu]         ) # Fridge power requested u_req ≥ Kgain (T - SP)
     @variable(model, sp[i=1:nu,t=1:Hu]                  ) # Setpoints
     @variable(model, δ[i=1:nu,t=1:Hu], Bin              ) # Fridge and Freezer ON-OFF
-    @variable(model, p_fridge_1_low .≤ p1[t=1:Hu] .≤ p_fridge_1_high) # Power modulation on compressor 1
+    @variable(model, p1_low .≤ p1[t=1:Hu] .≤ p1_high) # Power modulation on compressor 1
 
     # Algebraic related variables 
     u_fridges = u[1:nfridges,    :]
@@ -86,7 +85,7 @@ function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     δ_freezer = δ[nfridges+1:end,:]
 
     # Fridge
-    p2 = δ_fridges * p_fridge_2_high
+    p2 = δ_fridges * p2_high
     p3 = u_freezer
     p_tot = p1 + p2 + p3
 
@@ -125,8 +124,8 @@ function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     @constraints(model, U_req .≥ Kgain * (X - SP) )     # Reqested power 
     @constraints(model, x - sp - hysteresis_band .≤ big_M_freezer .* δ_freezer ) # Freezer power 
     @constraints(model, sp - hysteresis_band - x .< big_M_freezer .* (1 - δ_freezer) ) # Freezer power 
-    @constraints(model, u_req_tot - p_fridge_1_high .≤ big_M_fridge .* δ_fridge    )
-    @constraints(model, u_freezer .== δ_freezer * p_freezer_high)
+    @constraints(model, u_req_tot - p1_high .≤ big_M_fridge .* δ_fridge    )
+    @constraints(model, u_freezer .== δ_freezer * p3_high)
 
     @constraints(model, p1 .≤ U_req)
     @constraints(model, 0.0 .≤ u_fridges .≤ u_req)
@@ -149,48 +148,44 @@ function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
         # TODO : Rename the symbols as string and use a convention
         oy = Dict(
             :OPT_cost       => objective_value(model),
-            :T              => reshape(value.(T),  Nr, Hu)',
-            :SP             => reshape(value.(SP), Nr, Hu)',
-            :SP_transformed => reshape(value.(SP_transformed), Nr, Hu)',
-            :p_HVAC         => value.(p_HVAC),
+            :x              => value.(x),
+            :SP             => value.(sp),
+            :u              => value.(u),
+            :p1             => value.(p1),
+            :p2             => value.(p2),
+            :p3             => value.(p3),
+            :p_tot          => value.(p_tot),
             :p_grid         => value.(p_grid),
             :PVused         => value.(PVused),
             :PVcurt         => value.(PVcurt),
-            :SP_active      => reshape(value.(a), Nr, Hu)',
-            :balance_heat   => value.(bh),
-            :balance_cool   => value.(bc),
-            :Tbh            => value.(Tbh),
-            :Tbc            => value.(Tbc),
             :OPT_status     => status, 
             :o              => o, 
             :ox             => ox
         );
     else
-       @warn "Solver failed: $status. Returning NaN/Empty dict."
+        @warn "Solver failed: $status. Returning NaN/Empty dict."
       
-       oy = Dict(
-           :OPT_cost       => NaN,
-           :T              => fill(NaN, Hu, Nr),
-           :SP             => fill(NaN, Hu, Nr),
-           :SP_transformed => fill(NaN, Hu, Nr),
-           :p_HVAC         => NaN,
-           :p_grid         => NaN,
-           :PVused         => NaN,
-           :PVcurt         => NaN,
-           :SP_active      => fill(NaN, Hu, Nr),
-           :balance_heat   => fill(NaN, Hu),
-           :balance_cool   => fill(NaN, Hu),
-           :Tbh            => fill(NaN, Hu),
-           :Tbc            => fill(NaN, Hu),
-           :OPT_status     => status, 
-           :o              => o, 
-           :ox             => ox
-       )
+        oy = Dict(
+            :OPT_cost       => NaN,
+            :x              => fill(NaN, nx, Hu),
+            :SP             => fill(NaN, nx, Hu),
+            :u              => fill(NaN, nu, Hu),
+            :p1             => NaN,
+            :p2             => NaN,
+            :p3             => NaN,
+            :p_tot          => NaN,
+            :p_grid         => NaN,
+            :PVused         => NaN,
+            :PVcurt         => NaN,
+            :OPT_status     => status, 
+            :o              => o, 
+            :ox             => ox
+        )
     end
 
     # Debug
-    JuMP.write_to_file(model, joinpath(@__DIR__, "../../../data/")*"model_dump.lp")
-    opt_output_to_file(joinpath(@__DIR__, "../../../data/")*o.output_file, oy; kelvin = false)
+    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH","model_dump.lp"))
+    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH","output.txt"), oy; kelvin = false)
 
     return oy 
 
