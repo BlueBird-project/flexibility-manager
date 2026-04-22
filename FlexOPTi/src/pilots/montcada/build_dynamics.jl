@@ -1,4 +1,18 @@
 """
+    build_dynamics(::Montcada, o, digital_twin, sensors, forecasts) -> Dict{String,BatchDynamics}
+
+Build batch dynamics for both HVAC operating modes.
+"""
+function build_dynamics(::Montcada, o::O,
+                        digital_twin::Dict{String, Any},
+                        sensors::Vector{Dict{String, Any}},
+                        forecasts::Dict{String, Any})
+    Dict(mode => build_batch(o, digital_twin, sensors, forecasts; op_mode=mode)
+         for mode in ["heat", "cool"])
+end
+
+
+"""
     Deprecated
 """
 function super_batch(o::O,

@@ -118,15 +118,11 @@ function optimize(digital_twin_file, sensors_file, forecasts_file ;
 	constraints = build_constraints(o.pilot)
 	@info "Building the constraints."
 
-	# Build the dynamics
-	op_modes = ["heat", "cool"]
-	dynamo = Dict(
-				 op_modes[1] => build_batch(o, digital_twin, sensors, forecasts; op_mode=op_modes[1]), 
-	             op_modes[2] => build_batch(o, digital_twin, sensors, forecasts; op_mode=op_modes[2]) 
-				 )
+	# Build the dynamics (dispatched per pilot)
+	dynamo = build_dynamics(o.pilot, o, digital_twin, sensors, forecasts)
 
 	# Store in the input structure
-	ox = OX(digital_twin, sensors, forecasts, constraints, dynamo) 
+	ox = OX(digital_twin, sensors, forecasts, constraints, dynamo)
 
 	# Pass the configured Params `O` and inputs `OX` to the MPC
 	opt_time = @elapsed begin
@@ -158,10 +154,9 @@ end
 function default_code_parameter()
 
 	# Code parameters
-	Hu             = 1     # Controller horizon 
+	Hu             = 1     # Controller horizon
 	init_condition = false
 	pilot          = nothing
-	op_modes       = ["heat","cool"] # Opperation modes (HVAC modes) 
 
 	# Logging parameters
 	loglevel       = "info"
@@ -172,9 +167,9 @@ function default_code_parameter()
 
 	# Miscelanous
 	output_file = "output.txt"
-	        
+
 	compute_datetime = now(tz"UTC") # Use current time if not specified
-	return O(Hu, init_condition, pilot, op_modes,
+	return O(Hu, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
 		output_file, compute_datetime)
 end

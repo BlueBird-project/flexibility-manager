@@ -44,7 +44,6 @@ mutable struct O
     init_condition::Bool
     # name::String
     pilot::Union{String, AbstractBuilding, Nothing}
-    op_modes::Vector{String}
 
     loglevel::String
     logoutput::String
@@ -86,7 +85,7 @@ struct OX
     sensors::Vector{Dict{String, Any}}
     forecast::Dict{String, Any}
     constraints::Dict{Symbol, Any}
-    dynamics::Dict{String,BatchDynamics}
+    dynamics::Any
 end
 
 """
