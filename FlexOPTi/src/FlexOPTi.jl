@@ -51,6 +51,9 @@ include(joinpath(@__DIR__, "core", "parse_output.jl"))
 # Montcada specific
 include(joinpath(@__DIR__, "pilots", "montcada", "Montcada.jl"))
 
+# EWH specific
+include(joinpath(@__DIR__, "pilots", "ewh", "Ewh.jl"))
+
 # Plots 
 include(joinpath(@__DIR__, "core", "plots", "plot_state.jl"))
 
