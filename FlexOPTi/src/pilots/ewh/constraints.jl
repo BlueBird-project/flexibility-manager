@@ -96,7 +96,7 @@ function build_constraints(::Ewh;
         :p1_high                           => p1_high,
         :p2_low                            => p2_low,
         :p2_high                           => p2_high,
-        :p3_low                            => p3_low
+        :p3_low                            => p3_low,
         :p3_high                           => p3_high,
     )
 end

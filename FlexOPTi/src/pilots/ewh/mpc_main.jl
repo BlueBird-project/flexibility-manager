@@ -1,192 +1,306 @@
-function mpc_update(::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
+# =============================================================================
+#  EWH MPC — skeleton dispatcher + stage functions
+#
+#  The pipeline follows the project-wide O / OX / OY convention:
+#    O  = fixed metadata / code parameters  (horizon, solver, …)
+#    OX = optimization inputs               (digital twin, forecasts, constraints, dynamics)
+#    OY = optimization outputs              (returned Dict)
+#
+#  Call order (all dispatch on ::Ewh):
+#    build_variables!  →  build_constraints!  →  build_objective!
+#    →  optimize!  →  package_results
+# =============================================================================
 
-    digital_twin  = ox.digital_twin
-    sensors_json  = ox.sensors
-    forecast_json = ox.forecast
+# Air-temperature state index for room r.
+# State ordering: (T_air, T_prod) pairs → dairy, fp, meat, veg, freezer → indices 1,3,5,7,9
+air_idx(r::Int) = 2r - 1
 
-    Hu = o.Hu
-    ss = digital_twin["state_space"] 
+"""
+    initialize_model(o::O) -> JuMP.Model
 
-    Δt = ss["sampling_time"]
-    nx = ss["nx"] # State size
-    nu = ss["nu"] # Control inputs size
-    nfreezer = 1
-    nfridge  = nu - nfreezer
-
-    # TODO : ADD PV formulation
-    # TODO : Add Sensor and forecast and price signals
-
-    # Init solver
-    function initialize_JuMP_model(o::O)
-        try
-            solver = Symbol(o.solver)
-            model = Model(getfield(@__MODULE__, Symbol(solver)).Optimizer)
-            @info "Using solver "*o.solver*"."
-            return model
-        catch e
-            @warn "Solver not found or failed. Defaulting to HiGHS." # exception=(e, catch_backtrace())
-            model = Model(HiGHS.Optimizer)
-            return model
-        end
+Try to load the solver named in `o.solver`; fall back to HiGHS on failure.
+"""
+function initialize_model(o::O)
+    try
+        solver = Symbol(o.solver)
+        model  = Model(getfield(@__MODULE__, solver).Optimizer)
+        @info "Using solver " * o.solver * "."
+        return model
+    catch e
+        @warn "Solver not found or failed. Defaulting to HiGHS."
+        return Model(HiGHS.Optimizer)
     end
-    model = initialize_JuMP_model(o)
+end
 
-    ## Constraints Loading
-    # Asset constraints
-    # --- Temperatures ---
-    T_fridge_diary_low = constraints[:T_fridge_diary_low]                
-    T_fridge_diary_high = constraints[:T_fridge_diary_high]               
-    T_fridge_finished_products_low = constraints[:T_fridge_finished_products_low]    
-    T_fridge_finished_products_high = constraints[:T_fridge_finished_products_high]   
-    T_fridge_meat_low = constraints[:T_fridge_meat_low]                 
-    T_fridge_meat_high = constraints[:T_fridge_meat_high]                
-    T_fridge_vegetables_low = constraints[:T_fridge_vegetables_low]           
-    T_fridge_vegetables_high = constraints[:T_fridge_vegetables_high]          
-    T_freezer_low = constraints[:T_freezer_low]                   
-    T_freezer_high = constraints[:T_freezer_high]                   
-    # --- Setpoints ---
-    SP_fridge_diary_low = constraints[:SP_fridge_diary_low]               
-    SP_fridge_diary_high = constraints[:SP_fridge_diary_high]              
-    SP_fridge_finished_products_low = constraints[:SP_fridge_finished_products_low]   
-    SP_fridge_finished_products_high = constraints[:SP_fridge_finished_products_high]  
-    SP_fridge_meat_low = constraints[:SP_fridge_meat_low]                
-    SP_fridge_meat_high = constraints[:SP_fridge_meat_high]               
-    SP_fridge_vegetables_low = constraints[:SP_fridge_vegetables_low]          
-    SP_fridge_vegetables_high = constraints[:SP_fridge_vegetables_high]         
-    Sp3_low = constraints[:Sp3_low]                    
-    Sp3_high = constraints[:Sp3_high]                   
-    # --- Power ---
-    p1_low = constraints[:p1_low]                    
-    p1_high = constraints[:p1_high]                   
-    p2_low = constraints[:p2_low]                    
-    p2_high = constraints[:p2_high]                  
-    p3_low = constraints[:p3_low]                    
-    p3_high = constraints[:p3_high]                    
+# -----------------------------------------------------------------------------
+# Entry point
+# -----------------------------------------------------------------------------
 
-    # Stack the constraints
-    # State 
-    x_low  = [T_fridge_diary_low,  T_fridge_finished_products_low,  T_fridge_meat_low,  T_fridge_vegetables_low,  T_freezer_low]
-    x_high = [T_fridge_diary_high, T_fridge_finished_products_high, T_fridge_meat_high, T_fridge_vegetables_high, T_freezer_high]
-    # Setpoints
+"""
+    mpc_update(::Ewh, o, ox) -> Dict{Symbol,Any}
 
-    ## OPT Decision Variables
-    # Control related
-    @variable(model, x_low .≤ x[i=1:nx,t=1:Hu] .≤ x_high) # Full State Vector
-    @variable(model, u[i=1:nu,t=1:Hu]                   ) # Fridge and Freezer Power Distributed 
-    @variable(model, u_req[i=1,nfridge, t=1:Hu]         ) # Fridge power requested u_req ≥ Kgain (T - SP)
-    @variable(model, sp[i=1:nu,t=1:Hu]                  ) # Setpoints
-    @variable(model, δ[i=1:nu,t=1:Hu], Bin              ) # Fridge and Freezer ON-OFF
-    @variable(model, p1_low .≤ p1[t=1:Hu] .≤ p1_high) # Power modulation on compressor 1
+Build and solve one MPC step for the EWH pilot.
+Follows the O / OX / OY convention: `o` carries metadata, `ox` carries inputs,
+the returned dict is OY.
+"""
+function mpc_update(pilot::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
 
-    # Algebraic related variables 
-    u_fridges = u[1:nfridges,    :]
-    u_freezer = u[nfridges+1:end,:]
-    δ_fridges = δ[1:nfridges,    :]
-    δ_freezer = δ[nfridges+1:end,:]
+    model = initialize_model(o)
+    vars  = build_variables!(pilot, model, o, ox)
+    build_constraints!(pilot, model, vars, o, ox)
+    build_objective!(pilot, model, vars, o, ox)
 
-    # Fridge
-    p2 = δ_fridges * p2_high
-    p3 = u_freezer
-    p_tot = p1 + p2 + p3
-
-    u_req_tot = sum(u_req, dims=1) # Fridge requested power 
-
-    # Grid and PV related
-    @variable(model, 0.0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
-    @variable(model, 0.0      ≤ PVused[k=1:Hu   ] ≤ PV             ) # PV used
-    @variable(model, 0.0      ≤ PVcurt[k=1:Hu   ] ≤ PV             ) # PV curtailed
-
-    # Metadata for Constraints
-    # TODO : Include in the O structure 
-    big_M_fridge    = 1000
-    big_M_freezer   = 1000
-    hysteresis_band = 1.0
-
-    ## Constraints
-
-    # State dynamics is represented by the batch MPC constraints 
-    X = vec(x)
-    U = vec(u) 
-    U_req = vec(u_req) 
-
-    M   = ox.dynamics.M
-    Ξ   = ox.dynamics.Ξ
-    Ψ   = ox.dynamics.Ψ
-    ξ1  = ox.dynamics.ξ1
-    Δ   = ox.dynamics.Δ  
-
-    @constraint(model, X - Ξ*U - M*ξ1 - Ψ*Δ .==   0)
-
-    # Electrical Constraints
-    
-    # Compressors Constraints
-    # TODO : Define Kgain 
-    @constraints(model, U_req .≥ Kgain * (X - SP) )     # Reqested power 
-    @constraints(model, x - sp - hysteresis_band .≤ big_M_freezer .* δ_freezer ) # Freezer power 
-    @constraints(model, sp - hysteresis_band - x .< big_M_freezer .* (1 - δ_freezer) ) # Freezer power 
-    @constraints(model, u_req_tot - p1_high .≤ big_M_fridge .* δ_fridge    )
-    @constraints(model, u_freezer .== δ_freezer * p3_high)
-
-    @constraints(model, p1 .≤ U_req)
-    @constraints(model, 0.0 .≤ u_fridges .≤ u_req)
-
-
-    # Objectif 
-    @objective(model, Min, Δt*sum(p_tot .* ToU_price))
-
-    # Solve
     optimize!(model)
 
+    oy = package_results(pilot, model, vars, o, ox)
 
-    status = termination_status(model)
+    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH", "model_dump.lp"))
+    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH", "output.txt"), oy; kelvin = false)
 
-    has_solution = (termination_status(model) == MOI.OPTIMAL || 
-                    termination_status(model) == MOI.LOCALLY_SOLVED ||
+    return oy
+end
+
+# -----------------------------------------------------------------------------
+# Stage 1 — decision variables + algebraic expressions
+# -----------------------------------------------------------------------------
+
+"""
+    build_variables!(::Ewh, model, o, ox) -> EwhVars
+
+Declare all JuMP variables and compute derived algebraic expressions.
+Reads dimensions and bounds from `ox`; horizon from `o`.
+"""
+function build_variables!(::Ewh, model::JuMP.Model, o::O, ox::OX)::EwhVars
+
+    ss      = ox.digital_twin["state_space"]
+    con     = ox.constraints
+    Hu      = o.Hu
+    nx      = ss["nx"]        # 10: (T_air, T_prod) × 5 rooms
+    nu      = ss["nu"]        # 5:  one compressor input per room
+    nfridge = nu - 1          # 4
+
+    p1_low  = con[:p1_low]
+    p1_high = con[:p1_high]
+    p2_high = con[:p2_high]
+    p3_high = con[:p3_high]
+
+    # State trajectory — comfort bounds applied in build_constraints!
+    @variable(model, x[i=1:nx, t=1:Hu])
+
+    # Setpoints, one per room
+    @variable(model, sp[r=1:nu, t=1:Hu])
+
+    # Fridge allocated and requested power
+    @variable(model, u[r=1:nfridge, t=1:Hu]     ≥ 0.0)
+    @variable(model, u_req[r=1:nfridge, t=1:Hu] ≥ 0.0)
+
+    # Compressors
+    @variable(model, p1_low ≤ p1[t=1:Hu] ≤ p1_high)
+    @variable(model, δ_fridge[t=1:Hu],  Bin)
+    @variable(model, δ_freezer[t=1:Hu], Bin)
+
+    # Grid and PV — limits are OX inputs (TODO: read from ox once wired)
+    grid_buy_lim  = 1e6   # B̄ [kW] — TODO: from ox.constraints or digital twin
+    grid_sell_lim = 1e6   # S̄ [kW] — TODO: from ox.constraints or digital twin
+    @variable(model, 0.0 ≤ p_buy[t=1:Hu]  ≤ grid_buy_lim)
+    @variable(model, 0.0 ≤ p_sell[t=1:Hu] ≤ grid_sell_lim)
+    @variable(model, 0.0 ≤ PVused[t=1:Hu])
+    @variable(model, 0.0 ≤ PVcurt[t=1:Hu])
+
+    # Algebraic expressions
+    p2    = δ_fridge  .* p2_high
+    p3    = δ_freezer .* p3_high
+    P_tot = p1 .+ p2 .+ p3
+    U_req = vec(sum(u_req, dims=1))
+
+    return EwhVars(
+        x, sp, u, u_req, p1, δ_fridge, δ_freezer,
+        p_buy, p_sell, PVused, PVcurt,
+        p2, p3, P_tot, U_req,
+    )
+end
+
+# -----------------------------------------------------------------------------
+# Stage 2 — constraints
+# -----------------------------------------------------------------------------
+
+"""
+    build_constraints!(::Ewh, model, vars, o, ox)
+
+Add all EWH MPC constraints to `model` in place.
+"""
+function build_constraints!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
+
+    ss      = ox.digital_twin["state_space"]
+    con     = ox.constraints
+    dyn     = ox.dynamics
+    Hu      = o.Hu
+    nu      = ss["nu"]
+    nfridge = nu - 1
+    Kgain   = Float64(ss["Kgain"][1])
+
+    T_low  = [con[:T_fridge_diary_low],
+              con[:T_fridge_finished_products_low],
+              con[:T_fridge_meat_low],
+              con[:T_fridge_vegetables_low],
+              con[:T_freezer_low]]
+    T_high = [con[:T_fridge_diary_high],
+              con[:T_fridge_finished_products_high],
+              con[:T_fridge_meat_high],
+              con[:T_fridge_vegetables_high],
+              con[:T_freezer_high]]
+    SP_low  = [con[:SP_fridge_diary_low],
+               con[:SP_fridge_finished_products_low],
+               con[:SP_fridge_meat_low],
+               con[:SP_fridge_vegetables_low],
+               con[:SP_freezer_low]]
+    SP_high = [con[:SP_fridge_diary_high],
+               con[:SP_fridge_finished_products_high],
+               con[:SP_fridge_meat_high],
+               con[:SP_fridge_vegetables_high],
+               con[:SP_freezer_high]]
+
+    p1_high         = con[:p1_high]
+    big_M_fridge    = 1e6   # TODO: move to ox.constraints or o
+    big_M_freezer   = 1e6   # TODO: move to ox.constraints or o
+    hysteresis_band = 1.0   # d [°C] — TODO: move to ox.constraints or o
+
+    # TODO: parse from ox.forecast once forecasting service is wired up
+    PV_fc  = zeros(Hu)
+    P_rest = zeros(Hu)
+
+    ## Batch MPC dynamics:  X = Ξ·U_full + M·ξ1 + Ψ·Δ
+    # u_full stacks fridge controls (rows 1:nfridge) and freezer power p3 (row nu)
+    u_full = [v.u; reshape(v.p3, 1, Hu)]
+    @constraint(model, vec(v.x) .== dyn.Ξ * vec(u_full) .+
+                                    dyn.M * dyn.ξ1       .+
+                                    dyn.Ψ * dyn.Δ)
+
+    ## Comfort: T̲^r ≤ T_air^r ≤ T̄^r  (air-temp states only)
+    @constraint(model, [r=1:nu, t=1:Hu], T_low[r]  ≤ v.x[air_idx(r), t])
+    @constraint(model, [r=1:nu, t=1:Hu], v.x[air_idx(r), t] ≤ T_high[r])
+
+    ## Setpoint bounds
+    @constraint(model, [r=1:nu, t=1:Hu], SP_low[r] ≤ v.sp[r, t] ≤ SP_high[r])
+
+    ## Compressor logic
+
+    # u^{r,req} ≥ K^gain·(T^r_air − T^{r,sp})  ∀r ∈ {1..4}
+    @constraint(model, [r=1:nfridge, t=1:Hu],
+        v.u_req[r, t] ≥ Kgain * (v.x[air_idx(r), t] - v.sp[r, t]))
+
+    # Freezer hysteresis big-M (room nu=5)
+    @constraint(model, [t=1:Hu],
+        v.x[air_idx(nu), t] - (v.sp[nu, t] + hysteresis_band) ≤
+        big_M_freezer * v.δ_freezer[t])
+    @constraint(model, [t=1:Hu],
+        (v.sp[nu, t] - hysteresis_band) - v.x[air_idx(nu), t] ≤
+        big_M_freezer * (1 - v.δ_freezer[t]))
+
+    # Fridge on/off kicks in when total demand exceeds modulated limit
+    @constraint(model, [t=1:Hu],
+        v.U_req[t] - p1_high ≤ big_M_fridge * v.δ_fridge[t])
+
+    # Modulated compressor bounded by total requested load
+    @constraint(model, [t=1:Hu], v.p1[t] ≤ v.U_req[t])
+
+    # Power allocation: Σ u^r = p1 + p2,  u^r ≤ u^{r,req}
+    @constraint(model, [t=1:Hu], sum(v.u[:, t]) == v.p1[t] + v.p2[t])
+    @constraint(model, [r=1:nfridge, t=1:Hu], v.u[r, t] ≤ v.u_req[r, t])
+
+    ## Power balance
+    @constraint(model, [t=1:Hu],
+        v.p_buy[t] + v.PVused[t] == v.P_tot[t] + P_rest[t])
+    @constraint(model, [t=1:Hu], v.PVused[t] + v.PVcurt[t] ≤ PV_fc[t])
+    @constraint(model, [t=1:Hu], v.p_sell[t] ≤ PV_fc[t] - v.PVused[t])
+
+    return nothing
+end
+
+# -----------------------------------------------------------------------------
+# Stage 3 — objective
+# -----------------------------------------------------------------------------
+
+"""
+    build_objective!(::Ewh, model, vars, o, ox)
+
+Minimize net energy cost (buy cost minus sell revenue) over the horizon.
+"""
+function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
+
+    Hu = o.Hu
+    Δt = Float64(ox.digital_twin["state_space"]["sampling_time"])
+
+    # TODO: replace with ox.forecast["price_buy"] / ox.forecast["price_sell"]
+    ToU_buy  = ones(Hu)
+    ToU_sell = zeros(Hu)
+
+    @objective(model, Min,
+        Δt * sum(v.p_buy[t] * ToU_buy[t] - v.p_sell[t] * ToU_sell[t]
+                 for t in 1:Hu))
+    return nothing
+end
+
+# -----------------------------------------------------------------------------
+# Stage 4 — result packaging  (OY)
+# -----------------------------------------------------------------------------
+
+"""
+    package_results(::Ewh, model, vars, o, ox) -> Dict{Symbol,Any}
+
+Extract solution values (or NaN fallbacks on failure) into the OY output dict.
+"""
+function package_results(::Ewh, model::JuMP.Model,
+                         v::EwhVars, o::O, ox::OX)::Dict{Symbol, Any}
+
+    ss           = ox.digital_twin["state_space"]
+    Hu           = o.Hu
+    nx           = ss["nx"]
+    nu           = ss["nu"]
+    nfridge      = nu - 1
+    status       = termination_status(model)
+    has_solution = (status == MOI.OPTIMAL        ||
+                    status == MOI.LOCALLY_SOLVED  ||
                     primal_status(model) == MOI.FEASIBLE_POINT)
 
     if has_solution
-        # TODO : Rename the symbols as string and use a convention
-        oy = Dict(
-            :OPT_cost       => objective_value(model),
-            :x              => value.(x),
-            :SP             => value.(sp),
-            :u              => value.(u),
-            :p1             => value.(p1),
-            :p2             => value.(p2),
-            :p3             => value.(p3),
-            :p_tot          => value.(p_tot),
-            :p_grid         => value.(p_grid),
-            :PVused         => value.(PVused),
-            :PVcurt         => value.(PVcurt),
-            :OPT_status     => status, 
-            :o              => o, 
-            :ox             => ox
-        );
+        return Dict{Symbol, Any}(
+            :OPT_cost   => objective_value(model),
+            :x          => value.(v.x),
+            :SP         => value.(v.sp),
+            :u          => value.(v.u),
+            :u_req      => value.(v.u_req),
+            :p1         => value.(v.p1),
+            :p2         => value.(v.p2),
+            :p3         => value.(v.p3),
+            :P_tot      => value.(v.P_tot),
+            :p_buy      => value.(v.p_buy),
+            :p_sell     => value.(v.p_sell),
+            :PVused     => value.(v.PVused),
+            :PVcurt     => value.(v.PVcurt),
+            :OPT_status => status,
+            :o          => o,
+            :ox         => ox,
+        )
     else
-        @warn "Solver failed: $status. Returning NaN/Empty dict."
-      
-        oy = Dict(
-            :OPT_cost       => NaN,
-            :x              => fill(NaN, nx, Hu),
-            :SP             => fill(NaN, nx, Hu),
-            :u              => fill(NaN, nu, Hu),
-            :p1             => NaN,
-            :p2             => NaN,
-            :p3             => NaN,
-            :p_tot          => NaN,
-            :p_grid         => NaN,
-            :PVused         => NaN,
-            :PVcurt         => NaN,
-            :OPT_status     => status, 
-            :o              => o, 
-            :ox             => ox
+        @warn "Solver failed: $status. Returning NaN/empty dict."
+        return Dict{Symbol, Any}(
+            :OPT_cost   => NaN,
+            :x          => fill(NaN, nx, Hu),
+            :SP         => fill(NaN, nu, Hu),
+            :u          => fill(NaN, nfridge, Hu),
+            :u_req      => fill(NaN, nfridge, Hu),
+            :p1         => fill(NaN, Hu),
+            :p2         => fill(NaN, Hu),
+            :p3         => fill(NaN, Hu),
+            :P_tot      => fill(NaN, Hu),
+            :p_buy      => fill(NaN, Hu),
+            :p_sell     => fill(NaN, Hu),
+            :PVused     => fill(NaN, Hu),
+            :PVcurt     => fill(NaN, Hu),
+            :OPT_status => status,
+            :o          => o,
+            :ox         => ox,
         )
     end
-
-    # Debug
-    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH","model_dump.lp"))
-    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH","output.txt"), oy; kelvin = false)
-
-    return oy 
-
-end #function mpc_update
+end
