@@ -5,9 +5,9 @@ Build batch dynamics for the EWH pilot (single operating mode).
 """
 function build_dynamics(::Ewh, o::O,
                         digital_twin::Dict{String, Any},
-                        sensors::Vector{Dict{String, Any}},
+                        sensors,
                         forecasts::Dict{String, Any})
-    build_batch(o, digital_twin, sensors, forecasts)
+    build_batch(o, digital_twin, forecasts)
 end
 
 
@@ -24,8 +24,7 @@ end
 """
 function build_batch(o::O,
                      digital_twin::Dict{String, Any},
-                     sensors::Vector{Dict{String, Any}},
-                     forecast_json::Dict{String, Any})
+                     forecasts::Dict{String, Any})
 
     datetime = o.compute_datetime
     Hu = o.Hu
@@ -37,12 +36,12 @@ function build_batch(o::O,
 
     # Get all the necessary ingredients
     A  = ss["A" ]
-    x1 = ss["x1"]
+    x1 = ss["x0"]
     B  = ss["B" ]
     E  = ss["E" ]
 
     # Add forecasted disturbances
-    # Δ = get_forecasts()
+    Δ = batch_Δ(forecasts, Hu)
 
     # Now augment all to get a big statis description
     M = let
@@ -87,6 +86,25 @@ function batch_B(A::Matrix, B::Matrix, Hu::Int)
     return Ξ
 end
 
+
 function batch_E(A::Matrix, G::Matrix, Hu::Int)
     return batch_B(A, G, Hu)
+end
+
+
+function batch_Δ(forecasts::Dict{String, Any}, Hu::Int)
+    T_amb      = forecasts["T_ambient"]       # Vector{Float64}(Hu)
+    door_loads = forecasts["door_openings"]   # Matrix{Float64}(n_rooms × Hu)
+
+    # At each step k the disturbance vector is [T_amb_k; Q_door_1_k; ...; Q_door_5_k]
+    # Stack them: Δ has length nd * Hu = 6 * Hu
+    Δ = Float64[]
+    for k in 1:Hu
+        push!(Δ, T_amb[k])
+        for r in axes(door_loads, 1)
+            push!(Δ, door_loads[r, k])
+        end
+    end
+
+    return Δ
 end

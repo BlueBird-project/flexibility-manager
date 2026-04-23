@@ -75,8 +75,10 @@ All keyword arguments override fields of the default options object `O`
   (objective value, temperatures, setpoints, power flows, hybrid variables,
   solver status, options, and execution context).
 """
-function optimize(digital_twin_file, sensors_file, forecasts_file ;
-		  kwargs...)
+function optimize(digital_twin_file,
+                  sensors_file::Union{AbstractString, Nothing}   = nothing,
+                  forecasts_file::Union{AbstractString, Nothing} = nothing;
+                  kwargs...)
 
 	process_start_datetime = Dates.now()
 
@@ -133,8 +135,8 @@ function optimize(digital_twin_file, sensors_file, forecasts_file ;
 	process_end_datetime = Dates.now()
 	process_elapsed_time_in_sec = (process_end_datetime - process_start_datetime) / Second(1)
 
-	# Add time metadata
-	add_date_time_metadata!(oy, 
+	# Add time metadata (pilot-dispatched for source datetime extraction)
+	add_date_time_metadata!(o.pilot, oy,
 		process_start_datetime, process_end_datetime,
 		process_elapsed_time_in_sec)
 
@@ -174,21 +176,25 @@ function default_code_parameter()
 		output_file, compute_datetime)
 end
 
-function add_date_time_metadata!(oy::Dict{Symbol, Any},
-	start_datetime::DateTime, end_datetime::DateTime, 
+function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},
+	start_datetime::DateTime, end_datetime::DateTime,
 	process_elapsed_time_in_sec::Float64)::Dict{Symbol, Any}
-
-	dt       = oy[:ox].digital_twin
-	forecast = oy[:ox].forecast
-	sensors  = oy[:ox].sensors
 
 	oy[:OPT_start_date_time ] = string(start_datetime)
 	oy[:OPT_end_date_time   ] = string(end_datetime)
 	oy[:OPT_elapsed_time_sec] = process_elapsed_time_in_sec
 
-	oy[:DT_datetime       ], _ = find_lattest_datetime(dt["TransformedInputsTemperature"])
-	oy[:forecasts_datetime], _ = find_lattest_datetime(forecast["TransformedInputsTemperature"])
-	oy[:sensors_datetime  ], _ = find_lattest_datetime(sensors)
+	# Pilot-specific extraction of source datetimes
+	fill_source_datetimes!(pilot, oy)
 
+	return oy
+end
+
+# Fallback for pilots that don't override: use compute_datetime from o
+function fill_source_datetimes!(::AbstractBuilding, oy::Dict{Symbol, Any})
+	dt_str = string(oy[:o].compute_datetime)
+	oy[:DT_datetime       ] = dt_str
+	oy[:forecasts_datetime] = dt_str
+	oy[:sensors_datetime  ] = dt_str
 	return oy
 end

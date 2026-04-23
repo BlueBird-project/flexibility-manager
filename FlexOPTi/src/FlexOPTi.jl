@@ -19,6 +19,7 @@ using JSON, JSON3
 using JuMP
 using HiGHS, Gurobi
 using LinearAlgebra
+using Random 
 using SparseArrays
 using Symbolics 
 using Logging, LoggingExtras

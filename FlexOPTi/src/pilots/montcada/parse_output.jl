@@ -1,5 +1,15 @@
-struct Parser 
+struct Parser
     room_idx_mapping
+end
+
+function fill_source_datetimes!(::Montcada, oy::Dict{Symbol, Any})
+    dt       = oy[:ox].digital_twin
+    forecast = oy[:ox].forecast
+    sensors  = oy[:ox].sensors
+    oy[:DT_datetime       ], _ = find_lattest_datetime(dt["TransformedInputsTemperature"])
+    oy[:forecasts_datetime], _ = find_lattest_datetime(forecast["TransformedInputsTemperature"])
+    oy[:sensors_datetime  ], _ = find_lattest_datetime(sensors)
+    return oy
 end
 
 function parse_OPT_output(::Montcada, oy)

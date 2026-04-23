@@ -10,7 +10,7 @@ abstract type AbstractElecBuilding <: AbstractBuilding end
 # Define Each pilot 
 # Each parameters specific to the pilot could be defined here 
 struct Montcada <: AbstractElecBuilding end 
-struct EWH      <: AbstractElecBuilding end 
+struct Ewh      <: AbstractElecBuilding end
 struct Karno    <: AbstractHeatBuilding end 
 
 """
@@ -82,8 +82,8 @@ mutable struct OX
 """
 struct OX
     digital_twin::Dict{String, Any}
-    sensors::Vector{Dict{String, Any}}
-    forecast::Dict{String, Any}
+    sensors::Union{Vector{Dict{String, Any}}, Nothing}
+    forecast::Union{Dict{String, Any}, Nothing}
     constraints::Dict{Symbol, Any}
     dynamics::Any
 end

@@ -1,7 +1,5 @@
-function parse_sensors(pilot::AbstractBuilding, sensor_file::String,
-    digital_twin::Dict{String, Any})::Vector{Dict{String, Any}}
+function parse_sensors(pilot::AbstractBuilding, sensor_file::Union{Nothing, String})
+    @warn "No pilot-specific parse_sensors defined. Returning nothing."
+    return nothing
 
-    @warn "No default call. Return empty dict."
-    return Dict()
-
-end 
+end

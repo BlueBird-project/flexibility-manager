@@ -34,7 +34,7 @@ are in °C and optionally converted to Kelvin.
 - Check the real values from the datasheet
 """
 function build_constraints(::Ewh;
-    to_kelvin::Bool                            = true,
+    to_kelvin::Bool                            = false,   # digital twin states are in °C
     # --- Temperatures [°C] ---
     T_fridge_diary_low::Float64                = 2.0,
     T_fridge_diary_high::Float64               = 8.0,

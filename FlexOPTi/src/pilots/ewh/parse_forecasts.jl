@@ -11,7 +11,7 @@ The returned dict contains:
   "ToU_buy"       => Vector{Float64}(Hu)             — placeholder flat price [€/kWh]
   "ToU_sell"      => Vector{Float64}(Hu)             — placeholder flat sell price [€/kWh]
 """
-function parse_forecasts(::Ewh, o::O, forecasts_file::String)::Dict{String, Any}
+function parse_forecasts(::Ewh, o::O, forecasts_file::Union{String, Nothing})::Dict{String, Any}
 
     Hu              = o.Hu
     t0              = o.compute_datetime
@@ -37,7 +37,7 @@ function parse_forecasts(::Ewh, o::O, forecasts_file::String)::Dict{String, Any}
             end_min       = day_start + active_end   * 60   # exclusive
             possible      = collect(start_min:end_min-1)
             n_open        = rand(openings_low:openings_high)
-            chosen        = randperm(length(possible))[1:n_open]
+            chosen        = Random.randperm(length(possible))[1:n_open]
             for m in chosen
                 schedule[r, m + 1] = door_open_load   # 1-indexed
             end
@@ -56,8 +56,11 @@ function parse_forecasts(::Ewh, o::O, forecasts_file::String)::Dict{String, Any}
                              zeros(Float64, n_rooms, Hu - size(door_openings, 2)))
     end
 
+    T_ambient = fill(20.0, Hu)   # [°C] constant indoor ambient temperature
+
     return Dict{String, Any}(
         "door_openings" => door_openings,   # [n_rooms × Hu]
+        "T_ambient"     => T_ambient,       # [°C, length Hu]
         "ToU_buy"       => ones(Float64, Hu),
         "ToU_sell"      => zeros(Float64, Hu),
     )

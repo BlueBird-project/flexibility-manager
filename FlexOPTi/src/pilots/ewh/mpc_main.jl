@@ -15,6 +15,14 @@
 # State ordering: (T_air, T_prod) pairs → dairy, fp, meat, veg, freezer → indices 1,3,5,7,9
 air_idx(r::Int) = 2r - 1
 
+function fill_source_datetimes!(::Ewh, oy::Dict{Symbol, Any})
+    ts = oy[:ox].digital_twin["state_space"]["measure_timestamp"]
+    oy[:DT_datetime       ] = ts
+    oy[:forecasts_datetime] = ts
+    oy[:sensors_datetime  ] = ts
+    return oy
+end
+
 """
     initialize_model(o::O) -> JuMP.Model
 
@@ -50,12 +58,14 @@ function mpc_update(pilot::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     build_constraints!(pilot, model, vars, o, ox)
     build_objective!(pilot, model, vars, o, ox)
 
+    @infiltrate
+
     optimize!(model)
 
     oy = package_results(pilot, model, vars, o, ox)
 
-    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH", "model_dump.lp"))
-    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH", "output.txt"), oy; kelvin = false)
+    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH", "outputs", "model_dump.lp"))
+    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH", "outputs", "output.txt"), oy; kelvin = false)
 
     return oy
 end
@@ -231,9 +241,8 @@ function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     Hu = o.Hu
     Δt = Float64(ox.digital_twin["state_space"]["sampling_time"])
 
-    # TODO: replace with ox.forecast["price_buy"] / ox.forecast["price_sell"]
-    ToU_buy  = ones(Hu)
-    ToU_sell = zeros(Hu)
+    ToU_buy  = ox.forecast["ToU_buy"]
+    ToU_sell = ox.forecast["ToU_sell"]
 
     @objective(model, Min,
         Δt * sum(v.p_buy[t] * ToU_buy[t] - v.p_sell[t] * ToU_sell[t]
@@ -267,7 +276,7 @@ function package_results(::Ewh, model::JuMP.Model,
         return Dict{Symbol, Any}(
             :OPT_cost   => objective_value(model),
             :x          => value.(v.x),
-            :SP         => value.(v.sp),
+            :SP         => Matrix(value.(v.sp)'),  # transpose to [Hu × nu] for parse_OPT_output convention
             :u          => value.(v.u),
             :u_req      => value.(v.u_req),
             :p1         => value.(v.p1),
@@ -287,7 +296,7 @@ function package_results(::Ewh, model::JuMP.Model,
         return Dict{Symbol, Any}(
             :OPT_cost   => NaN,
             :x          => fill(NaN, nx, Hu),
-            :SP         => fill(NaN, nu, Hu),
+            :SP         => fill(NaN, Hu, nu),  # [Hu × nu] convention
             :u          => fill(NaN, nfridge, Hu),
             :u_req      => fill(NaN, nfridge, Hu),
             :p1         => fill(NaN, Hu),

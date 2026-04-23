@@ -55,7 +55,13 @@ function parse_OPT_output(oy; only_next_step::Bool=false)
     output_parser = parse_OPT_output(demo, oy)
 
     # ---- time handling ----
-    dt_hours = oy[:ox].digital_twin["DeltaTimeInHours"]
+    # Montcada stores "DeltaTimeInHours" at the top level; EWH stores sampling_time (s) in state_space
+    dt = oy[:ox].digital_twin
+    dt_hours = if haskey(dt, "DeltaTimeInHours")
+        dt["DeltaTimeInHours"]
+    else
+        dt["state_space"]["sampling_time"] / 3600.0
+    end
     dt = Dates.Second(round(Int, dt_hours * 3600))
 
     t0 = DateTime(ZonedDateTime(oy[:DT_datetime]))
