@@ -58,14 +58,12 @@ function mpc_update(pilot::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
     build_constraints!(pilot, model, vars, o, ox)
     build_objective!(pilot, model, vars, o, ox)
 
-    @infiltrate
-
     optimize!(model)
 
     oy = package_results(pilot, model, vars, o, ox)
 
     JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "EWH", "outputs", "model_dump.lp"))
-    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH", "outputs", "output.txt"), oy; kelvin = false)
+    opt_output_to_file(joinpath(pkgdir(@__MODULE__), "data", "EWH", "outputs", "output.txt"), oy; kelvin = true)
 
     return oy
 end
@@ -182,47 +180,48 @@ function build_constraints!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     ## Batch MPC dynamics:  X = Ξ·U_full + M·ξ1 + Ψ·Δ
     # u_full stacks fridge controls (rows 1:nfridge) and freezer power p3 (row nu)
     u_full = [v.u; reshape(v.p3, 1, Hu)]
-    @constraint(model, vec(v.x) .== dyn.Ξ * vec(u_full) .+
+    @constraint(model, Dynamics, vec(v.x) .== dyn.Ξ * vec(u_full) .+
                                     dyn.M * dyn.ξ1       .+
                                     dyn.Ψ * dyn.Δ)
 
     ## Comfort: T̲^r ≤ T_air^r ≤ T̄^r  (air-temp states only)
-    @constraint(model, [r=1:nu, t=1:Hu], T_low[r]  ≤ v.x[air_idx(r), t])
-    @constraint(model, [r=1:nu, t=1:Hu], v.x[air_idx(r), t] ≤ T_high[r])
+    @constraint(model, Confort_low[r=1:nu, t=1:Hu], T_low[r]  ≤ v.x[air_idx(r), t])
+    @constraint(model, Confort_hig[r=1:nu, t=1:Hu], v.x[air_idx(r), t] ≤ T_high[r])
 
     ## Setpoint bounds
-    @constraint(model, [r=1:nu, t=1:Hu], SP_low[r] ≤ v.sp[r, t] ≤ SP_high[r])
+    @constraint(model, Setpoints_limits[r=1:nu, t=1:Hu], SP_low[r] ≤ v.sp[r, t] ≤ SP_high[r])
 
     ## Compressor logic
 
     # u^{r,req} ≥ K^gain·(T^r_air − T^{r,sp})  ∀r ∈ {1..4}
-    @constraint(model, [r=1:nfridge, t=1:Hu],
+    @constraint(model, Gain[r=1:nfridge, t=1:Hu],
         v.u_req[r, t] ≥ Kgain * (v.x[air_idx(r), t] - v.sp[r, t]))
 
     # Freezer hysteresis big-M (room nu=5)
-    @constraint(model, [t=1:Hu],
+    @constraint(model, Big_M_freezer1[t=1:Hu],
         v.x[air_idx(nu), t] - (v.sp[nu, t] + hysteresis_band) ≤
         big_M_freezer * v.δ_freezer[t])
-    @constraint(model, [t=1:Hu],
+    @constraint(model, Big_M_freezer2[t=1:Hu],
         (v.sp[nu, t] - hysteresis_band) - v.x[air_idx(nu), t] ≤
         big_M_freezer * (1 - v.δ_freezer[t]))
 
+
     # Fridge on/off kicks in when total demand exceeds modulated limit
-    @constraint(model, [t=1:Hu],
+    @constraint(model, Big_M_fridge[t=1:Hu],
         v.U_req[t] - p1_high ≤ big_M_fridge * v.δ_fridge[t])
 
     # Modulated compressor bounded by total requested load
-    @constraint(model, [t=1:Hu], v.p1[t] ≤ v.U_req[t])
+    @constraint(model, Compressor_req_bound1[t=1:Hu], v.p1[t] ≤ v.U_req[t])
 
     # Power allocation: Σ u^r = p1 + p2,  u^r ≤ u^{r,req}
-    @constraint(model, [t=1:Hu], sum(v.u[:, t]) == v.p1[t] + v.p2[t])
-    @constraint(model, [r=1:nfridge, t=1:Hu], v.u[r, t] ≤ v.u_req[r, t])
+    @constraint(model, Power_alloc_fridge[t=1:Hu], sum(v.u[:, t]) == v.p1[t] + v.p2[t])
+    @constraint(model, Compressor_req_bound2[r=1:nfridge, t=1:Hu], v.u[r, t] ≤ v.u_req[r, t])
 
     ## Power balance
-    @constraint(model, [t=1:Hu],
+    @constraint(model, Power_balance[t=1:Hu],
         v.p_buy[t] + v.PVused[t] == v.P_tot[t] + P_rest[t])
-    @constraint(model, [t=1:Hu], v.PVused[t] + v.PVcurt[t] ≤ PV_fc[t])
-    @constraint(model, [t=1:Hu], v.p_sell[t] ≤ PV_fc[t] - v.PVused[t])
+    @constraint(model, PV_balance[t=1:Hu], v.PVused[t] + v.PVcurt[t] ≤ PV_fc[t])
+    @constraint(model, Power_sell[t=1:Hu], v.p_sell[t] ≤ PV_fc[t] - v.PVused[t])
 
     return nothing
 end
@@ -247,6 +246,7 @@ function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     @objective(model, Min,
         Δt * sum(v.p_buy[t] * ToU_buy[t] - v.p_sell[t] * ToU_sell[t]
                  for t in 1:Hu))
+
     return nothing
 end
 
@@ -275,13 +275,15 @@ function package_results(::Ewh, model::JuMP.Model,
     if has_solution
         return Dict{Symbol, Any}(
             :OPT_cost   => objective_value(model),
-            :x          => value.(v.x),
+            :x          => Matrix(value.(v.x)'),  # transpose to [Hu × nx]
             :SP         => Matrix(value.(v.sp)'),  # transpose to [Hu × nu] for parse_OPT_output convention
-            :u          => value.(v.u),
-            :u_req      => value.(v.u_req),
+            :u          => Matrix(value.(v.u)'),    # transpose to [Hu × nfridge]
+            :u_req      => Matrix(value.(v.u_req)'), # transpose to [Hu × nfridge]
             :p1         => value.(v.p1),
             :p2         => value.(v.p2),
             :p3         => value.(v.p3),
+            :δ_fridge   => value.(v.δ_fridge),
+            :δ_freezer  => value.(v.δ_freezer),
             :P_tot      => value.(v.P_tot),
             :p_buy      => value.(v.p_buy),
             :p_sell     => value.(v.p_sell),
@@ -295,13 +297,15 @@ function package_results(::Ewh, model::JuMP.Model,
         @warn "Solver failed: $status. Returning NaN/empty dict."
         return Dict{Symbol, Any}(
             :OPT_cost   => NaN,
-            :x          => fill(NaN, nx, Hu),
+            :x          => fill(NaN, Hu, nx),
             :SP         => fill(NaN, Hu, nu),  # [Hu × nu] convention
-            :u          => fill(NaN, nfridge, Hu),
-            :u_req      => fill(NaN, nfridge, Hu),
+            :u          => fill(NaN, Hu, nfridge),
+            :u_req      => fill(NaN, Hu, nfridge),
             :p1         => fill(NaN, Hu),
             :p2         => fill(NaN, Hu),
             :p3         => fill(NaN, Hu),
+            :δ_fridge   => fill(NaN, Hu),
+            :δ_freezer  => fill(NaN, Hu),
             :P_tot      => fill(NaN, Hu),
             :p_buy      => fill(NaN, Hu),
             :p_sell     => fill(NaN, Hu),

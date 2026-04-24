@@ -1,6 +1,6 @@
 ## Imports
-# import Pkg
-# Pkg.activate(".")
+import Pkg
+Pkg.activate(".")
 
 using Revise
 using Infiltrator
@@ -15,4 +15,4 @@ sensors_file  = nothing
 forecast_file = nothing
  
 ## optimize 
-oy = optimize(dt_file, sensors_file, forecast_file; loglevel="info", Hu = 1, pilot = "Ewh", solver = "Gurobi");
+oy = optimize(dt_file, sensors_file, forecast_file; loglevel="info", Hu = 3, pilot = "Ewh", solver = "Gurobi");

@@ -40,8 +40,8 @@ function build_constraints(::Ewh;
     T_fridge_diary_high::Float64               = 8.0,
     T_fridge_finished_products_low::Float64    = 2.0,
     T_fridge_finished_products_high::Float64   = 7.0,
-    T_fridge_meat_low::Float64                 = 2.0,
-    T_fridge_meat_high::Float64                = 5.0,
+    T_fridge_meat_low::Float64                 = 0.0,
+    T_fridge_meat_high::Float64                = 9.0,
     T_fridge_vegetables_low::Float64           = 2.0,
     T_fridge_vegetables_high::Float64          = 7.0,
     T_freezer_low::Float64                     = -40.0,
@@ -59,11 +59,11 @@ function build_constraints(::Ewh;
     SP_freezer_high::Float64                   = -18.0,
     # --- Power [kW] ---
     p1_low::Float64                            = 0.0, # Fridges
-    p1_high::Float64                           = 3.0, # Fridges
+    p1_high::Float64                           = 5000.0, # Fridges
     p2_low::Float64                            = 0.0, # Fridges
-    p2_high::Float64                           = 3.0, # Fridges 
+    p2_high::Float64                           = 5000.0, # Fridges 
     p3_low::Float64                            = 0.0, # Freezer 
-    p3_high::Float64                           = 5.0, # Freezer
+    p3_high::Float64                           = 5000.0, # Freezer
 )
 
     _to_kelvin(x::Float64) = to_kelvin ? x + KELVIN_OFFSET : x
