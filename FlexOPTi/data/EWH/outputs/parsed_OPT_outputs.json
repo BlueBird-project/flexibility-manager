@@ -1,0 +1,798 @@
+{
+    "PowerGridBuy": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "TempSP": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 8,
+                "T_air_fridge_meat": 5,
+                "T_air_freezer": -18,
+                "T_air_fridge_finishedProducts": 7,
+                "T_air_fridge_vegetables": 7
+            }
+        }
+    ],
+    "FridgePower": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "OPTTerminationTime": "2026-04-24T14:43:49.413",
+    "FreezerOn": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "value": 0
+        }
+    ],
+    "TotalPower": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "PowerGridSell": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "ModulatedCompressorPower": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "CompressorPowerRequested": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000.000000000007,
+                "P_compressor_fridge_finishedProducts": -7.275957614183426e-12,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 4999.999999999999,
+                "P_compressor_fridge_finishedProducts": 7.898808469663878e-13,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000.000000000028,
+                "P_compressor_fridge_finishedProducts": -2.8222888399763766e-11,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 4999.999999999992,
+                "P_compressor_fridge_finishedProducts": 7.801068946496334e-12,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 5000,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        }
+    ],
+    "CompressorPowerAllocated": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": -7.275957614183426e-12,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 7.898808469663878e-13,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": -2.8222888399763766e-11,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 7.801068946496334e-12,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "space": {
+                "P_compressor_fridge_dairy": 0,
+                "P_compressor_fridge_finishedProducts": 0,
+                "P_compressor_fridge_meat": 0,
+                "P_compressor_fridge_vegetables": 0
+            }
+        }
+    ],
+    "StateTrajectory": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.033177533479676,
+                "T_air_fridge_meat": 3.0333131638650177,
+                "T_prod_fridge_dairy": 3.0003381505589206,
+                "T_prod_fridge_meat": 3.0003110934601884,
+                "T_prod_freezer": -18.997683768447743,
+                "T_prod_fridge_finishedProducts": 4.000429547084951,
+                "T_air_freezer": -18.881194322429025,
+                "T_air_fridge_finishedProducts": 4.0326633312785445,
+                "T_air_fridge_vegetables": 5.035853600728368,
+                "T_prod_fridge_vegetables": 5.000413146213862
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.064783693773768,
+                "T_air_fridge_meat": 3.065305336833188,
+                "T_prod_fridge_dairy": 3.0013219900746546,
+                "T_prod_fridge_meat": 3.001220138604509,
+                "T_prod_freezer": -18.991082477289204,
+                "T_prod_fridge_finishedProducts": 4.0016719189440755,
+                "T_air_freezer": -18.771082890353046,
+                "T_air_fridge_finishedProducts": 4.063553025488657,
+                "T_air_fridge_vegetables": 5.069872370496652,
+                "T_prod_fridge_vegetables": 5.001611605731063
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.0949232632006285,
+                "T_air_fridge_meat": 3.096052122217344,
+                "T_prod_fridge_dairy": 3.0029079133055454,
+                "T_prod_fridge_meat": 3.0026923555850193,
+                "T_prod_freezer": -18.98067383956201,
+                "T_prod_fridge_finishedProducts": 4.003661871190553,
+                "T_air_freezer": -18.66871082688064,
+                "T_air_fridge_finishedProducts": 4.092809670823129,
+                "T_air_fridge_vegetables": 5.102190009891106,
+                "T_prod_fridge_vegetables": 5.003537297170719
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.12369401177734,
+                "T_air_fridge_meat": 3.125624775160123,
+                "T_prod_fridge_dairy": 3.0050552335084584,
+                "T_prod_fridge_meat": 3.0046949651988535,
+                "T_prod_freezer": -18.96688284047723,
+                "T_prod_fridge_finishedProducts": 4.006339351649974,
+                "T_air_freezer": -18.573228635123623,
+                "T_air_fridge_finishedProducts": 4.120562668502113,
+                "T_air_fridge_vegetables": 5.132930434692344,
+                "T_prod_fridge_vegetables": 5.006136390446405
+            }
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.1511871665157503,
+                "T_air_fridge_meat": 3.1540904527235454,
+                "T_prod_fridge_dairy": 3.0077259871190036,
+                "T_prod_fridge_meat": 3.0071970738188045,
+                "T_prod_freezer": -18.950087556727826,
+                "T_prod_fridge_finishedProducts": 4.0096490871885715,
+                "T_air_freezer": -18.48388056794516,
+                "T_air_fridge_finishedProducts": 4.146931122978864,
+                "T_air_fridge_vegetables": 5.162208492002644,
+                "T_prod_fridge_vegetables": 5.009358995623264
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.1774878493110137,
+                "T_air_fridge_meat": 3.1815124495943894,
+                "T_prod_fridge_dairy": 3.0108847515034767,
+                "T_prod_fridge_meat": 3.010169564942238,
+                "T_prod_freezer": -18.930624333549467,
+                "T_prod_fridge_finishedProducts": 4.013540203419701,
+                "T_air_freezer": -18.39999428127985,
+                "T_air_fridge_finishedProducts": 4.172024661307105,
+                "T_air_fridge_vegetables": 5.429154628817353,
+                "T_prod_fridge_vegetables": 5.015913182639364
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.2026754855245696,
+                "T_air_fridge_meat": 3.207950420232763,
+                "T_prod_fridge_dairy": 3.014498474907693,
+                "T_prod_fridge_meat": 3.0135849969777,
+                "T_prod_freezer": -18.908792390415396,
+                "T_prod_fridge_finishedProducts": 4.017965874672263,
+                "T_air_freezer": -18.32097162936443,
+                "T_air_fridge_finishedProducts": 4.195944187307065,
+                "T_air_fridge_vegetables": 5.443587281340938,
+                "T_prod_fridge_vegetables": 5.0254829036924376
+            }
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "degC",
+            "space": {
+                "T_air_fridge_dairy": 3.226824185222828,
+                "T_air_fridge_meat": 3.233460588243514,
+                "T_prod_fridge_dairy": 3.0185363177864546,
+                "T_prod_fridge_meat": 3.017417506910431,
+                "T_prod_freezer": -18.884857918424064,
+                "T_prod_fridge_finishedProducts": 4.022883001812964,
+                "T_air_freezer": -18.24628047585226,
+                "T_air_fridge_finishedProducts": 4.218782575718581,
+                "T_air_fridge_vegetables": 5.457745430684171,
+                "T_prod_fridge_vegetables": 5.035160118816486
+            }
+        }
+    ],
+    "PVPowerCurtailed": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "ForecastProcessedDateTime": "2026-04-24T06:55:02Z",
+    "FridgeOn": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "value": 0
+        }
+    ],
+    "OPTStartDateTime": "2026-04-24T14:43:12.723",
+    "FreezerPower": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ],
+    "SensorsProcessedDateTime": "2026-04-24T06:55:02Z",
+    "OPTTerminationStatus": "OPTIMAL",
+    "OPTProcessElapsedTime": 36.69,
+    "OPTCost": 0,
+    "DTProcessedDataTime": "2026-04-24T06:55:02Z",
+    "PVPowerUsed": [
+        {
+            "datetime": "2026-04-24T06:55:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:56:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:57:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:58:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T06:59:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:00:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:01:02",
+            "units": "W",
+            "value": 0
+        },
+        {
+            "datetime": "2026-04-24T07:02:02",
+            "units": "W",
+            "value": 0
+        }
+    ]
+}

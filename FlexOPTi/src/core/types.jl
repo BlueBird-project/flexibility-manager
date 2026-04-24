@@ -89,8 +89,9 @@ struct OX
 end
 
 """
-    Depreciated. 
+    Depreciated.
 """
 struct OY
-    output_dic::Dict{Symbol, Any} 
+    output_dic::Dict{Symbol, Any}
 end
+

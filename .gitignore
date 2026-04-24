@@ -424,13 +424,14 @@ $RECYCLE.BIN/
 Project.toml
 Manifest.toml
 
+/FlexOPTi/Claude.md
+
 #######################################
 #              Forecasting            #
 #######################################
 
 forecasting/Prefect Pipelines/tasks/__pycache__
 forecasting/Prefect Pipelines/fast_objects
-
 
 ## Acknowledgements
 # Many thanks to `https://gitignore.io/`, written and maintained by Joe Blau, which contributed much material to this gitignore file.
