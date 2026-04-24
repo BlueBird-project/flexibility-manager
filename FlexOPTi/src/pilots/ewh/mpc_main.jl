@@ -223,6 +223,20 @@ function build_constraints!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     @constraint(model, PV_balance[t=1:Hu], v.PVused[t] + v.PVcurt[t] ≤ PV_fc[t])
     @constraint(model, Power_sell[t=1:Hu], v.p_sell[t] ≤ PV_fc[t] - v.PVused[t])
 
+
+    # Debuging constraints
+    @constraint(model, [t=1:Hu ÷ 2   ], v.δ_freezer[t] == 0)
+    @constraint(model, [t=Hu ÷ 2+1:Hu], v.δ_freezer[t] == 1)
+
+    @constraint(model, [t=1:Hu ÷ 2   ], v.u[1,t] == 0)
+    @constraint(model, [t=Hu ÷ 2+1:Hu], v.u[1,t] == 700)
+    @constraint(model, [t=1:Hu ÷ 2   ], v.u[2,t] == 0)
+    @constraint(model, [t=Hu ÷ 2+1:Hu], v.u[2,t] == 700)
+    @constraint(model, [t=1:Hu ÷ 2   ], v.u[3,t] == 0)
+    @constraint(model, [t=Hu ÷ 2+1:Hu], v.u[3,t] == 1000)
+    @constraint(model, [t=1:Hu ÷ 2   ], v.u[4,t] == 0)
+    @constraint(model, [t=Hu ÷ 2+1:Hu], v.u[4,t] == 1200)
+
     return nothing
 end
 

@@ -67,15 +67,18 @@ N  = 100  # simulation horizon [timesteps]
 Δt = ss["sampling_time"]  # 60 s
 
 ## Disturbance vector (constant)
-d = vcat(20.0, zeros(nd - 1))  # T_ambient = 20 degC, no door openings
+d = vcat(fill(20.0, N)', zeros(nd - 1, N))  # T_ambient = 20 degC, no door openings
+d[3,20] = 4500
+d[3,60] = 4500
+d[4,35] = 4500
 
 ## Time-varying compressor power [W]
 # Zero for the first half, 2500 W for the second half (step at k = N÷2 + 1)
 U = zeros(N, nu)
 U[(N÷2 + 1):end, begin:end-1] .= 700.0
 U[(N÷2 + 1):end, 3          ] .= 1000.0
-U[(N÷2 + 1):end, 4          ] .= 100.0
-U[(N÷2 + 1):end, end        ] .= 2500.0
+U[(N÷2 + 1):end, 4          ] .= 1200.0
+U[(N÷2 + 1):end, end        ] .= 2700.0
 
 
 ## Simulate
@@ -84,7 +87,7 @@ Y = zeros(N,     ny)
 X[1, :] = x0
 
 for k in 1:N
-    X[k+1, :] = A * X[k, :] + B * U[k, :] + E * d
+    X[k+1, :] = A * X[k, :] + B * U[k, :] + E * d[:,k]
     Y[k, :]   = C * X[k, :]
 end
 
@@ -117,6 +120,35 @@ println("=" ^ 60)
 ## Expose results for interactive inspection
 println("\nVariables available: X [$(N+1)×$(nx)], Y [$(N)×$(ny)], u, d")
 
+## Load MPC state trajectory from output.txt
+# Format per line: [k, j]  value  repeated — k=timestep (1..N), j=state index (1..nx)
+# Each line covers one state column j for all timesteps.
+# MPC x[k, j] is the state at the END of step k, i.e. after applying u[k].
+# This aligns with our X[k+1, j] (X is 1-indexed from the initial condition).
+output_path = joinpath(pwd(), "data", "EWH", "outputs", "output.txt")
+X_mpc = fill(NaN, N, nx)
+open(output_path) do f
+    in_x_section = false
+    for line in eachline(f)
+        if occursin("================ x ================", line)
+            in_x_section = true
+            continue
+        end
+        if in_x_section
+            startswith(line, "====") && break
+            isempty(strip(line)) && continue
+            for m in eachmatch(r"\[(\d+),\s*(\d+)\]\s*([-\d.]+)", line)
+                k, j, v = parse(Int, m[1]), parse(Int, m[2]), parse(Float64, m[3])
+                if k <= N && j <= nx
+                    X_mpc[k, j] = v
+                end
+            end
+        end
+    end
+end
+# MPC time axis: step k corresponds to t = k * Δt/60 min
+t_mpc = (1:N) .* (Δt / 60)
+
 ## Plots
 t_min  = (0:N)   .* (Δt / 60)   # state time axis [min]
 t_minu = (1:N)   .* (Δt / 60)   # input time axis [min]
@@ -137,7 +169,7 @@ for (i_air, i_prod, i_u, T_low, T_high, label) in zones
 
     # --- Temperature subplot ---
     p_T = plot(t_min, X[:, i_air];
-        label     = "T_air",
+        label     = "T_air (sim)",
         xlabel    = "Time [min]",
         ylabel    = "Temp [°C]",
         title     = label,
@@ -146,9 +178,22 @@ for (i_air, i_prod, i_u, T_low, T_high, label) in zones
         color     = :steelblue,
     )
     plot!(p_T, t_min, X[:, i_prod];
-        label     = "T_prod",
+        label     = "T_prod (sim)",
         linewidth = 2,
         linestyle = :dash,
+        color     = :darkorange,
+    )
+    # MPC trajectories — overlaid for comparison
+    plot!(p_T, t_mpc, X_mpc[:, i_air];
+        label     = "T_air (MPC)",
+        linewidth = 2,
+        linestyle = :dot,
+        color     = :steelblue,
+    )
+    plot!(p_T, t_mpc, X_mpc[:, i_prod];
+        label     = "T_prod (MPC)",
+        linewidth = 2,
+        linestyle = :dashdot,
         color     = :darkorange,
     )
     hline!(p_T, [T_low, T_high];

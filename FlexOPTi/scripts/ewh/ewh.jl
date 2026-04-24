@@ -15,4 +15,4 @@ sensors_file  = nothing
 forecast_file = nothing
  
 ## optimize 
-oy = optimize(dt_file, sensors_file, forecast_file; loglevel="info", Hu = 8, pilot = "Ewh", solver = "Gurobi");
+oy = optimize(dt_file, sensors_file, forecast_file; loglevel="info", Hu = 100, pilot = "Ewh", solver = "Gurobi");

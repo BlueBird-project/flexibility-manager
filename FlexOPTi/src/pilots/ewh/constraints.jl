@@ -59,11 +59,11 @@ function build_constraints(::Ewh;
     SP_freezer_high::Float64                   = -18.0,
     # --- Power [kW] ---
     p1_low::Float64                            = 0.0, # Fridges
-    p1_high::Float64                           = 5000.0, # Fridges
+    p1_high::Float64                           = 3300.0, # Fridges
     p2_low::Float64                            = 0.0, # Fridges
-    p2_high::Float64                           = 5000.0, # Fridges 
+    p2_high::Float64                           = 2900.0, # Fridges 
     p3_low::Float64                            = 0.0, # Freezer 
-    p3_high::Float64                           = 5000.0, # Freezer
+    p3_high::Float64                           = 2700.0, # Freezer
 )
 
     _to_kelvin(x::Float64) = to_kelvin ? x + KELVIN_OFFSET : x

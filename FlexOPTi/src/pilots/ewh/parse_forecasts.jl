@@ -17,8 +17,8 @@ function parse_forecasts(::Ewh, o::O, forecasts_file::Union{String, Nothing})::D
     t0              = o.compute_datetime
     n_rooms         = 5          # 4 fridges + 1 freezer
     door_open_load  = 4500.0     # [W] heat input when door is open
-    openings_low    = 11         # min daily door openings per room
-    openings_high   = 17         # max daily door openings per room
+    openings_low    = 0          # min daily door openings per room
+    openings_high   = 0          # max daily door openings per room
     active_start    = 6          # hour: 06:00
     active_end      = 23         # hour: 23:00 (exclusive)
 
@@ -43,6 +43,10 @@ function parse_forecasts(::Ewh, o::O, forecasts_file::Union{String, Nothing})::D
             end
         end
     end
+
+    schedule[2,20] = door_open_load
+    schedule[2,60] = door_open_load
+    schedule[3,35] = door_open_load
 
     # Aggregate from minute resolution to model time steps.
     # Δt is read from the digital twin at solve time; here we assume 1 step = 1 minute.
