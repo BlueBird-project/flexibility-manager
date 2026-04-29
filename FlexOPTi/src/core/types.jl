@@ -41,6 +41,7 @@ pilot::String : Pilot string identification
 """
 mutable struct O
     Hu::Int
+    Δt::Float64
     init_condition::Bool
     # name::String
     pilot::Union{String, AbstractBuilding, Nothing}
@@ -51,9 +52,11 @@ mutable struct O
     log_with_time::Bool
     solver::String
 
+    continuous_dynamo::Bool
+
     output_file::String
     compute_datetime::Union{String, ZonedDateTime, Nothing}
-end 
+end
 
 """
     Used for batch MPC formulation

@@ -10,7 +10,7 @@ using Debugger
 using FlexOPTi
 
 ## Test
-dt_file       = joinpath(pwd(), "data", "EWH", "inputs", "cold_room_model.json");
+dt_file       = joinpath(pwd(), "data", "EWH", "inputs", "cold_room_model_continuous.json");
 sensors_file  = nothing
 forecast_file = nothing
  

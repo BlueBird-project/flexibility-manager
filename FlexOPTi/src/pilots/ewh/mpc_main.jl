@@ -252,7 +252,7 @@ Minimize net energy cost (buy cost minus sell revenue) over the horizon.
 function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
 
     Hu = o.Hu
-    Δt = Float64(ox.digital_twin["state_space"]["sampling_time"])
+    Δt = o.Δt
 
     ToU_buy  = ox.forecast["ToU_buy"]
     ToU_sell = ox.forecast["ToU_sell"]

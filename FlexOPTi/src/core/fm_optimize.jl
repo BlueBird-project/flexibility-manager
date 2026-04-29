@@ -157,6 +157,7 @@ function default_code_parameter()
 
 	# Code parameters
 	Hu             = 1     # Controller horizon
+	Δt             = 60.0  # Sampling time [seconds]
 	init_condition = false
 	pilot          = nothing
 
@@ -167,12 +168,16 @@ function default_code_parameter()
 	log_with_time  = true
 	solver         = "HiGHS"
 
+	# Dynamics (DT) hyperparameters
+	continuous_dynamo = true # Use continuous dynamics (true) or discrete (false)
+
 	# Miscelanous
 	output_file = "output.txt"
 
 	compute_datetime = now(tz"UTC") # Use current time if not specified
-	return O(Hu, init_condition, pilot,
+	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
+		continuous_dynamo,
 		output_file, compute_datetime)
 end
 

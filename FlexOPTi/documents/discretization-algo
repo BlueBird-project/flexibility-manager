@@ -1,0 +1,21 @@
+total_dim = n_states + n_inputs + n_dist
+
+M = np.zeros((total_dim, total_dim))
+
+M[:n_states, :n_states]                       = A
+
+M[:n_states, n_states:n_states + n_inputs]    = B
+
+M[:n_states, n_states + n_inputs:]             = E
+
+ 
+
+Md = expm(M * p.dt)
+
+ 
+
+Ad = Md[:n_states, :n_states]
+
+Bd = Md[:n_states, n_states:n_states + n_inputs]
+
+Ed = Md[:n_states, n_states + n_inputs:]
