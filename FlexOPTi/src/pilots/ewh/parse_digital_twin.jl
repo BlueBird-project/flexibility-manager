@@ -23,6 +23,8 @@ function parse_digital_twin(::Ewh, o::O, json_path::String)::Dict{String, Any}
     ss["x0"] = Vector{Float64}(ss["x0"])
 
     if o.continuous_dynamo
+        A, B, E = discretize_zoh(ss["A"], ss["B"], ss["E"], o.Δt)
+        @infiltrate
         ss["A"], ss["B"], ss["E"] = discretize_zoh(ss["A"], ss["B"], ss["E"], o.Δt)
     else
         o.Δt = Float64(ss["sampling_time"])
