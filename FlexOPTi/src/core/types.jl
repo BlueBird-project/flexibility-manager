@@ -51,6 +51,8 @@ mutable struct O
     logfile::String
     log_with_time::Bool
     solver::String
+    mip_gap::Float64        # relative MIP gap tolerance (e.g. 0.01 = 1%)
+    warm_start::Bool        # if true, mpc_update accepts a previous OY and uses it as initial guess
 
     continuous_dynamo::Bool
 

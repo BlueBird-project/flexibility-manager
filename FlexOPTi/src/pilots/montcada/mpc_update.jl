@@ -97,20 +97,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     power_mode = Int.(sum(h) > threshold) |> x -> fill(x, Hu)
     h = repeat(h', Hu)
 
-    # Init solver
-    function initialize_JuMP_model(o::O)
-        try
-            solver = Symbol(o.solver)
-            model = Model(getfield(@__MODULE__, Symbol(solver)).Optimizer)
-            @info "Using solver "*o.solver*"."
-            return model
-        catch e
-            @warn "Solver not found or failed. Defaulting to HiGHS." # exception=(e, catch_backtrace())
-            model = Model(HiGHS.Optimizer)
-            return model
-        end
-    end
-    model = initialize_JuMP_model(o)
+    model = initialize_model(o)
 
     # Asset constraints
     constraints = ox.constraints

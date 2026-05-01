@@ -167,6 +167,8 @@ function default_code_parameter()
 	logfile        = "fm.log"
 	log_with_time  = true
 	solver         = "HiGHS"
+	mip_gap        = 1e-4   # relative MIP gap (override via kwargs, e.g. mip_gap=0.01)
+	warm_start     = false  # warm-starting disabled by default
 
 	# Dynamics (DT) hyperparameters
 	continuous_dynamo = true # Use continuous dynamics (true) or discrete (false)
@@ -177,6 +179,7 @@ function default_code_parameter()
 	compute_datetime = now(tz"UTC") # Use current time if not specified
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
+		mip_gap, warm_start,
 		continuous_dynamo,
 		output_file, compute_datetime)
 end

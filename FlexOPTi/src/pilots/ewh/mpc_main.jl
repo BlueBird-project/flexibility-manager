@@ -23,22 +23,40 @@ function fill_source_datetimes!(::Ewh, oy::Dict{Symbol, Any})
     return oy
 end
 
-"""
-    initialize_model(o::O) -> JuMP.Model
+# -----------------------------------------------------------------------------
+# EWH-specific warm-start override
+# -----------------------------------------------------------------------------
 
-Try to load the solver named in `o.solver`; fall back to HiGHS on failure.
 """
-function initialize_model(o::O)
-    try
-        solver = Symbol(o.solver)
-        model  = Model(getfield(@__MODULE__, solver).Optimizer)
-        @info "Using solver " * o.solver * "."
-        return model
-    catch e
-        @warn "Solver not found or failed. Defaulting to HiGHS."
-        return Model(Gurobi.Optimizer)
-        # return Model(HiGHS.Optimizer)
+    apply_warm_start!(::Ewh, v, warm, Hu)
+
+Set JuMP start values on `EwhVars` from a shifted warm-start dict.
+Continuous variables receive exact shifted values; binaries are rounded.
+Called from `mpc_update` when `o.warm_start == true` and a previous OY is provided.
+"""
+function apply_warm_start!(::Ewh, v::EwhVars, warm::Dict{Symbol, Any}, Hu::Int)
+    nx_v = size(v.x, 1)
+    for t in 1:Hu, i in 1:nx_v
+        set_start_value(v.x[i, t], warm[:x][t, i])
     end
+    nfridge = size(v.u, 1)
+    for t in 1:Hu, r in 1:nfridge
+        set_start_value(v.u[r, t],  warm[:u][t, r])
+        set_start_value(v.sp[r, t], warm[:sp][t, r])
+    end
+    # sp has nu columns; handle the extra setpoint (freezer, room nu)
+    nu_sp = size(v.sp, 1)
+    if nu_sp > nfridge
+        for t in 1:Hu
+            set_start_value(v.sp[nu_sp, t], warm[:sp][t, nu_sp])
+        end
+    end
+    for t in 1:Hu
+        set_start_value(v.p1[t],        warm[:p1][t])
+        set_start_value(v.δ_fridge[t],  Int(warm[:δ_fridge][t]))
+        set_start_value(v.δ_freezer[t], Int(warm[:δ_freezer][t]))
+    end
+    return nothing
 end
 
 # -----------------------------------------------------------------------------
@@ -46,16 +64,26 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    mpc_update(::Ewh, o, ox) -> Dict{Symbol,Any}
+    mpc_update(::Ewh, o, ox[, oy_prev]) -> Dict{Symbol,Any}
 
 Build and solve one MPC step for the EWH pilot.
 Follows the O / OX / OY convention: `o` carries metadata, `ox` carries inputs,
 the returned dict is OY.
+
+If `o.warm_start == true` and `oy_prev` is provided, the previous solution is
+shifted by one time step and used as an initial guess for the solver.
 """
-function mpc_update(pilot::Ewh, o::O, ox::OX)::Dict{Symbol, Any}
+function mpc_update(pilot::Ewh, o::O, ox::OX,
+                    oy_prev::Union{Dict{Symbol,Any}, Nothing} = nothing)::Dict{Symbol, Any}
 
     model = initialize_model(o)
     vars  = build_variables!(pilot, model, o, ox)
+
+    if o.warm_start && !isnothing(oy_prev)
+        warm = shift_warm_start(oy_prev, o.Hu)
+        apply_warm_start!(pilot, vars, warm, o.Hu)
+    end
+
     build_constraints!(pilot, model, vars, o, ox)
     build_objective!(pilot, model, vars, o, ox)
 

@@ -60,6 +60,8 @@ o = FlexOPTi.O(
     "fm.log",                                     # logfile
     false,                                        # log_with_time
     "Gurobi",                                     # solver
+    0.02,                                         # mip_gap (2% — fine for receding-horizon MPC)
+    true,                                         # warm_start
     true,                                         # continuous_dynamo
     "output.txt",                                 # output_file
     ZonedDateTime(2026, 5, 1, 8, 0, 0, tz"UTC"),  # compute_datetime (8 am)
@@ -164,7 +166,9 @@ Q_noise = (σ_process^2) * I(nx)
 
 # ── MPC loop ───────────────────────────────────────────────────────────────
 
-@info "Starting MPC loop: $N_sim steps = $(N_sim * Δt_s / 3600) hours"
+println("Starting MPC loop: $N_sim steps = $(N_sim * Δt_s / 3600) hours")
+
+oy_prev = nothing   # previous OY for warm-starting; nothing on first solve
 
 for t in 1:N_sim
 
@@ -184,7 +188,8 @@ for t in 1:N_sim
     # ── Build OX and solve one MPC step ───────────────────────────────────
     dynamics = FlexOPTi.build_dynamics(pilot, o, digital_twin, nothing, forecast)
     ox       = FlexOPTi.OX(digital_twin, nothing, forecast, constraints, dynamics)
-    oy       = FlexOPTi.mpc_update(pilot, o, ox)
+    elapsed  = @elapsed oy = FlexOPTi.mpc_update(pilot, o, ox, oy_prev)
+    FlexOPTi.print_mpc_progress(t, N_sim, oy, elapsed)
 
     # ── Extract first control action ───────────────────────────────────────
     # oy[:u]  → [Hu × nfridge]  fridge powers at each step
@@ -194,6 +199,8 @@ for t in 1:N_sim
     u_first      = vcat(u_fridge_t1, p_fz_t1)   # [5]  full input vector
 
     U_closed[:, t] = u_first
+
+    global oy_prev = isnan(oy[:OPT_cost]) ? nothing : oy
 
     # Store full predicted trajectories from this solve (keep updating)
     global X_pred_last = Matrix(oy[:x]')      # [nx × Hu]
@@ -208,18 +215,12 @@ for t in 1:N_sim
 
     global Σ = Ad * Σ * Ad' + Q_noise
 
-    if t % 12 == 1
-        h_off = (t - 1) * Δt_h
-        @info @sprintf("t=%3d  (8am+%4.1fh)  P_fz=%.0f W  T_fz=%.2f°C  σ=%.3f  status=%s",
-                        t, h_off, p_fz_t1, X_true[freezer_si, t],
-                        σ_freezer[t], string(oy[:OPT_status]))
-    end
 end
 
 σ_freezer[N_sim+1] = sqrt(max(Σ[freezer_si, freezer_si], 0.0))
 
 total_energy_kwh = sum(U_closed) * Δt_h / 1000
-@info @sprintf("Total compressor energy: %.1f kWh", total_energy_kwh)
+@sprintf("Total compressor energy: %.1f kWh", total_energy_kwh) |> println
 
 # ── Plots ──────────────────────────────────────────────────────────────────
 #
