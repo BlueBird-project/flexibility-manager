@@ -22,7 +22,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, "..", ".."))
 
 using FlexOPTi
-using JSON, LinearAlgebra, Random, Printf, Plots, TimeZones, Dates
+using JSON, JLD2, LinearAlgebra, Random, Printf, Plots, TimeZones, Dates
 
 Random.seed!(42)
 
@@ -221,6 +221,17 @@ end
 
 total_energy_kwh = sum(U_closed) * Δt_h / 1000
 @sprintf("Total compressor energy: %.1f kWh", total_energy_kwh) |> println
+
+# ── Save simulation results ────────────────────────────────────────────────
+
+mkpath(OUT_DIR)
+results_file = joinpath(OUT_DIR, "mpc_results.jld2")
+jldsave(results_file;
+    X_true, U_closed, X_pred_last, U_pred_last,
+    price, door_schedule, σ_freezer,
+    Δt_h, Hu, N_sim, N_price, nx, nu,
+    freezer_r, freezer_si)
+println("Results saved to $results_file")
 
 # ── Plots ──────────────────────────────────────────────────────────────────
 #
