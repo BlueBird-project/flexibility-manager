@@ -22,7 +22,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, "..", ".."))
 
 using FlexOPTi
-using JSON, JLD2, LinearAlgebra, Random, Printf, Plots, TimeZones, Dates
+using JSON, JLD2, LinearAlgebra, Random, Printf, TimeZones, Dates
 
 Random.seed!(42)
 
@@ -34,9 +34,9 @@ const OUT_DIR = joinpath(ROOT, "data", "EWH", "outputs")
 
 # ── Simulation parameters ──────────────────────────────────────────────────
 
-const Δt_s      = 300.0                    # time step [s]
-const Δt_h      = Δt_s / 3600.0           # time step [h]
-const Hu        = Int(12 * 3600 / Δt_s)   # 12-h horizon = 144 steps
+const Δt_s      = 900.0                    # time step [s]
+const Δt_h      = Δt_s / 3600.0            # time step [h]
+const Hu        = Int(12 * 3600 / Δt_s)    # 12-h horizon = 36 steps
 const N_sim     = Hu                       # simulate 12 h
 const T_AMB     = 18.0                     # constant ambient [°C] (underground)
 const σ_process = 0.05                     # process noise std [°C] per step
@@ -59,9 +59,10 @@ o = FlexOPTi.O(
     "console",                                    # logoutput
     "fm.log",                                     # logfile
     false,                                        # log_with_time
-    "Gurobi",                                     # solver
-    0.02,                                         # mip_gap (2% — fine for receding-horizon MPC)
-    true,                                         # warm_start
+    "HiGHS",                                     # solver
+    0.01,                                       # mip_gap (2% — fine for receding-horizon MPC)
+    false,                                        # warm_start
+    Hu,                                           # milp_horizon (1 = only first step binary, Hu = full MILP)
     true,                                         # continuous_dynamo
     "output.txt",                                 # output_file
     ZonedDateTime(2026, 5, 1, 8, 0, 0, tz"UTC"),  # compute_datetime (8 am)
@@ -232,84 +233,4 @@ jldsave(results_file;
     Δt_h, Hu, N_sim, N_price, nx, nu,
     freezer_r, freezer_si)
 println("Results saved to $results_file")
-
-# ── Plots ──────────────────────────────────────────────────────────────────
-#
-#  Both subplots span [0, 24] h (shared x-axis).
-#  Left half  [0, 12 h] : true closed-loop simulation.
-#  Right half [12, 24 h]: MPC open-loop prediction from the last solve.
-
-x_lim     = (0.0, N_price * Δt_h)    # 24 h
-sim_end_h = N_sim * Δt_h              # 12 h
-
-time_sim   = collect(range(0.0, step = Δt_h, length = N_sim))
-time_state = collect(range(0.0, step = Δt_h, length = N_sim + 1))
-time_price = collect(range(0.0, step = Δt_h, length = N_price))
-time_pred  = collect(range(sim_end_h, step = Δt_h, length = Hu + 1))
-
-# Predicted freezer trajectory: prepend last true state for smooth connection
-T_fz_pred = vcat(X_true[freezer_si, N_sim+1], X_pred_last[freezer_si, :])
-P_fz_pred = vcat(U_pred_last[freezer_r, 1],   U_pred_last[freezer_r, :])
-
-T_fz = X_true[freezer_si, :]
-P_fz = U_closed[freezer_r, :]
-
-door_times = time_sim[door_schedule[freezer_r, :] .> 0]
-
-common = (framestyle = :box, xlims = x_lim,
-          xlabel = "Time from 8 am [h]", grid = true, gridalpha = 0.3)
-
-function add_door_vlines!(p)
-    for (i, td) in enumerate(door_times)
-        vline!(p, [td]; color = :firebrick, ls = :dash, lw = 1.0,
-               label = i == 1 ? "Door opening (freezer)" : "")
-    end
-end
-
-# ── Subplot 1: electricity price ───────────────────────────────────────────
-p_price = plot(time_price, price;
-               ylabel = "Price [€/kWh]", label = "Buy price",
-               color = :black, lw = 2, legend = :topright,
-               title = "Electricity price (EU day-ahead, 15 min blocks)",
-               common...)
-vspan!(p_price, [0.0, sim_end_h];       alpha = 0.08, color = :steelblue, label = "Simulation")
-vspan!(p_price, [sim_end_h, x_lim[2]]; alpha = 0.06, color = :grey,      label = "MPC lookahead")
-vline!(p_price, [sim_end_h]; color = :black, ls = :dot, lw = 1.2, label = "")
-add_door_vlines!(p_price)
-
-# ── Subplot 2: freezer temp (left) + compressor power (right) ─────────────
-p_temp = plot(time_state, T_fz;
-              ribbon = σ_freezer, fillalpha = 0.20,
-              color = :steelblue, lw = 2,
-              ylabel = "Freezer air temperature [°C]",
-              label = "T_air  ±1σ (true)", legend = :bottomleft,
-              title = "Freezer — temperature & compressor power",
-              common...)
-plot!(p_temp, time_pred, T_fz_pred;
-      color = :grey, lw = 1.5, ls = :dash,
-      label = "MPC prediction (last solve)")
-hline!(p_temp, [-40.0, -18.0];
-       color = :steelblue, ls = :dot, alpha = 0.7, label = "T bounds")
-vspan!(p_temp, [sim_end_h, x_lim[2]]; alpha = 0.06, color = :grey, label = "")
-vline!(p_temp, [sim_end_h]; color = :black, ls = :dot, lw = 1.2, label = "")
-add_door_vlines!(p_temp)
-
-p_pow = twinx(p_temp)
-plot!(p_pow, time_sim,  P_fz;
-      color = :darkorange, lw = 1.5,
-      ylabel = "Compressor power [W]",
-      label = "Power (right axis)", legend = :bottomright,
-      xlims = x_lim, framestyle = :box)
-plot!(p_pow, time_pred, P_fz_pred;
-      color = :darkorange, lw = 1.2, ls = :dash,
-      label = "", xlims = x_lim)
-
-combined = plot(p_price, p_temp;
-                layout = (2, 1), size = (1000, 700),
-                left_margin = 6Plots.mm, right_margin = 12Plots.mm,
-                bottom_margin = 5Plots.mm, top_margin = 3Plots.mm,
-                link = :x)
-
-mkpath(OUT_DIR)
-savefig(combined, joinpath(OUT_DIR, "mpc_base.png"))
-@info "Plot saved to $(joinpath(OUT_DIR, "mpc_base.png"))"
+println("Run scripts/ewh/mpc_plot.jl to generate plots.")

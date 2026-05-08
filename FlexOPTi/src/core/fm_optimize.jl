@@ -156,8 +156,8 @@ end
 function default_code_parameter()
 
 	# Code parameters
-	Hu             = 1     # Controller horizon
-	Δt             = 60.0  # Sampling time [seconds]
+	Hu             = 24     # Controller horizon
+	Δt             = 900.0  # Sampling time [seconds]
 	init_condition = false
 	pilot          = nothing
 
@@ -169,6 +169,7 @@ function default_code_parameter()
 	solver         = "HiGHS"
 	mip_gap        = 1e-4   # relative MIP gap (override via kwargs, e.g. mip_gap=0.01)
 	warm_start     = false  # warm-starting disabled by default
+	milp_horizon   = 1      # only first step binary by default; set to Hu for full MILP
 
 	# Dynamics (DT) hyperparameters
 	continuous_dynamo = true # Use continuous dynamics (true) or discrete (false)
@@ -179,7 +180,7 @@ function default_code_parameter()
 	compute_datetime = now(tz"UTC") # Use current time if not specified
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
-		mip_gap, warm_start,
+		mip_gap, warm_start, milp_horizon,
 		continuous_dynamo,
 		output_file, compute_datetime)
 end

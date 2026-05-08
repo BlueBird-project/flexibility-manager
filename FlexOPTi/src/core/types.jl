@@ -53,6 +53,7 @@ mutable struct O
     solver::String
     mip_gap::Float64        # relative MIP gap tolerance (e.g. 0.01 = 1%)
     warm_start::Bool        # if true, mpc_update accepts a previous OY and uses it as initial guess
+    milp_horizon::Int       # steps with binary constraints; remainder relaxed to [0,1] (0 = full LP, Hu = full MILP)
 
     continuous_dynamo::Bool
 

@@ -110,23 +110,14 @@ to the next line.  Each step leaves a permanent row before the next begins.
 - `bar_width` : number of bird slots (default 20)
 - `tick_s`    : delay between each bird appearing (default 0.03 s)
 """
-function print_mpc_progress(t::Int, N::Int, oy::Dict{Symbol,Any},
-                             elapsed_s::Float64;
-                             bar_width::Int = 20, tick_s::Float64 = 0.03)
+function print_mpc_progress(t::Int, N::Int, oy::Dict{Symbol,Any}, elapsed_s::Float64)
     status   = string(oy[:OPT_status])
     cost     = oy[:OPT_cost]
+    gap      = get(oy, :OPT_gap, NaN)
     cost_str = isnan(cost) ? "    N/A   " : @sprintf("%10.2f", cost)
-
-    for filled in 1:bar_width
-        bar = string(repeat("🐦", filled), repeat("  ", bar_width - filled))
-        print(stdout, @sprintf("\rMPC [%s] %4d/%-4d", bar, t, N))
-        flush(stdout)
-        sleep(tick_s)
-    end
-
-    bar_full = repeat("🐦", bar_width)
-    println(stdout, @sprintf("\rMPC [%s] %4d/%-4d  %-14s  cost=%s  gap=%.0f%%  %6.1fs",
-                             bar_full, t, N, status, cost_str, oy[:o].mip_gap * 100, elapsed_s))
+    gap_str  = isnan(gap)  ? "  N/A  " : @sprintf("%.2f%%", gap * 100)
+    println(stdout, @sprintf("MPC  %4d/%-4d  %-14s  cost=%s  gap=%s  %6.1fs",
+                             t, N, status, cost_str, gap_str, elapsed_s))
     flush(stdout)
     return nothing
 end

@@ -131,10 +131,18 @@ function build_variables!(::Ewh, model::JuMP.Model, o::O, ox::OX)::EwhVars
     @variable(model, u[r=1:nfridge, t=1:Hu]     ≥ 0.0)
     @variable(model, u_req[r=1:nfridge, t=1:Hu] ≥ 0.0)
 
-    # Compressors
+    # Compressors — binary for first milp_horizon steps, relaxed [0,1] for the rest
+    milp_steps = clamp(o.milp_horizon, 0, Hu)
     @variable(model, p1_low ≤ p1[t=1:Hu] ≤ p1_high)
-    @variable(model, δ_fridge[t=1:Hu],  Bin)
-    @variable(model, δ_freezer[t=1:Hu], Bin)
+    @variable(model, δ_fridge[t=1:Hu])
+    @variable(model, δ_freezer[t=1:Hu])
+    for t in 1:milp_steps
+        set_binary(δ_fridge[t]);  set_binary(δ_freezer[t])
+    end
+    for t in milp_steps+1:Hu
+        set_lower_bound(δ_fridge[t],  0.0); set_upper_bound(δ_fridge[t],  1.0)
+        set_lower_bound(δ_freezer[t], 0.0); set_upper_bound(δ_freezer[t], 1.0)
+    end
 
     # Grid and PV — limits are OX inputs (TODO: read from ox once wired)
     grid_buy_lim  = 1e6   # B̄ [kW] — TODO: from ox.constraints or digital twin
@@ -301,10 +309,12 @@ function package_results(::Ewh, model::JuMP.Model,
     has_solution = (status == MOI.OPTIMAL        ||
                     status == MOI.LOCALLY_SOLVED  ||
                     primal_status(model) == MOI.FEASIBLE_POINT)
+    actual_gap   = try relative_gap(model) catch; NaN end
 
     if has_solution
         return Dict{Symbol, Any}(
             :OPT_cost   => objective_value(model),
+            :OPT_gap    => actual_gap,
             :x          => Matrix(value.(v.x)'),  # transpose to [Hu × nx]
             :SP         => Matrix(value.(v.sp)'),  # transpose to [Hu × nu] for parse_OPT_output convention
             :u          => Matrix(value.(v.u)'),    # transpose to [Hu × nfridge]
@@ -327,6 +337,7 @@ function package_results(::Ewh, model::JuMP.Model,
         @warn "Solver failed: $status. Returning NaN/empty dict."
         return Dict{Symbol, Any}(
             :OPT_cost   => NaN,
+            :OPT_gap    => NaN,
             :x          => fill(NaN, Hu, nx),
             :SP         => fill(NaN, Hu, nu),  # [Hu × nu] convention
             :u          => fill(NaN, Hu, nfridge),
