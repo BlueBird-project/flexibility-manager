@@ -400,8 +400,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     end
 
     # Debug
-    JuMP.write_to_file(model, joinpath(@__DIR__, "../../../data/montcada/outputs/")*"model_dump.lp")
-    opt_output_to_file(joinpath(@__DIR__, "../../../data/montcada/outputs/")*o.output_file, oy; kelvin = false)
+    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "model_dump.lp"))
+    opt_output_to_file(joinpath(@__DIR__, "../../..", "data", o.output_file), oy; kelvin = false)
 
     return oy 
 
