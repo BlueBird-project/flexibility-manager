@@ -11,8 +11,8 @@
 #    :unavailable — no data at all; flat 0 price used (optimization result unreliable)
 # =============================================================================
 
-const PRICE_SLOT_MINUTES = 15
-const EUR_MWH_TO_EUR_KWH = 1 / 1000.0
+const PRICE_SLOT_MINUTES  = 15
+const EUR_MWH_TO_EUR_WH   = 1 / 1_000_000.0   # power in W, time in s → cost in EUR
 
 # ── Low-level TM helpers (same logic as query_prices.jl standalone script) ───
 
@@ -47,7 +47,7 @@ function _query_tm_prices(tm_base::String, market_id::Int)::Dict{DateTime, Float
         session_start = _from_ms(Int64(first(raw).ts))
         for slot in raw
             dt  = session_start + Minute(PRICE_SLOT_MINUTES * (Int(slot.isp_start) - 1))
-            prices[dt] = Float64(slot.cost_mwh) * EUR_MWH_TO_EUR_KWH
+            prices[dt] = Float64(slot.cost_mwh) * EUR_MWH_TO_EUR_WH
         end
     end
     return prices
@@ -172,8 +172,10 @@ end
 
 Fetch day-ahead electricity prices for the MPC horizon defined by `o`.
 
-Returns a length-`o.Hu` vector of buy prices in EUR/kWh (one value per MPC
+Returns a length-`o.Hu` vector of buy prices in EUR/Wh (one value per MPC
 step, snapped to the containing 15-min price slot) and a quality symbol:
+(Unit: EUR/Wh matches the W power variables and s time step in the objective
+ Δt[s] × p[W] × price[EUR/Wh] = EUR)
   :live        — fresh from the Trading Manager
   :cached      — TM unreachable, values from the on-disk cache
   :fallback    — cache also unavailable; previous-day proxy or constant 0

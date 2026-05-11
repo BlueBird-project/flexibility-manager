@@ -93,7 +93,7 @@ println()
 # Day-ahead prices are published ~noon the day before delivery.
 # The system holds the last 5 days + today's published prices.
 
-date_from = today() - Day(5)
+date_from = today() - Day(2)
 date_to   = today() + Day(1)
 
 println("=== Germany offer sessions ($date_from → $date_to) ===")
