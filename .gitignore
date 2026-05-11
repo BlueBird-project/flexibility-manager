@@ -421,6 +421,7 @@ $RECYCLE.BIN/
 /FlexOPTi/.vscode/
 /FlexOPTi/*.txt
 /FlexOPTi/*.lp
+/FlexOPTi/data/
 Project.toml
 Manifest.toml
 
