@@ -80,8 +80,13 @@ function mpc_update(pilot::Ewh, o::O, ox::OX,
     vars  = build_variables!(pilot, model, o, ox)
 
     if o.warm_start && !isnothing(oy_prev)
-        warm = shift_warm_start(oy_prev, o.Hu)
-        apply_warm_start!(pilot, vars, warm, o.Hu)
+        prev_Hu = length(get(oy_prev, :p1, []))
+        if prev_Hu != o.Hu
+            @warn "Warm start skipped: previous horizon ($prev_Hu) ≠ current ($(o.Hu))"
+        else
+            warm = shift_warm_start(oy_prev, o.Hu)
+            apply_warm_start!(pilot, vars, warm, o.Hu)
+        end
     end
 
     build_constraints!(pilot, model, vars, o, ox)
@@ -278,7 +283,9 @@ function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     Hu = o.Hu
     Δt = o.Δt
 
-    ToU_buy  = ox.forecast["ToU_buy"]
+    # ox.prices is the authoritative buy price signal (EUR/kWh, length Hu).
+    # Fall back to ox.forecast["ToU_buy"] only when prices are unavailable.
+    ToU_buy  = !isnothing(ox.prices) ? ox.prices : ox.forecast["ToU_buy"]
     ToU_sell = ox.forecast["ToU_sell"]
 
     @objective(model, Min,

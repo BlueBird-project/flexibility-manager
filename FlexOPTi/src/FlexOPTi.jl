@@ -15,6 +15,7 @@ module FlexOPTi
 
 # Dependencies
 using Printf
+using HTTP
 using JSON, JSON3
 using JuMP
 using HiGHS, Gurobi
@@ -43,6 +44,7 @@ include(joinpath(@__DIR__, "print", "print_output.jl"))
 include(joinpath(@__DIR__, "core", "parse_digital_twin.jl"))
 include(joinpath(@__DIR__, "core", "parse_sensors.jl"))
 include(joinpath(@__DIR__, "core", "parse_forecasts.jl"))
+include(joinpath(@__DIR__, "core", "fetch_prices.jl"))
 include(joinpath(@__DIR__, "core", "build_constraints.jl"))
 include(joinpath(@__DIR__, "core", "mpc_update.jl"))
 include(joinpath(@__DIR__, "core", "mpc_helper.jl"))

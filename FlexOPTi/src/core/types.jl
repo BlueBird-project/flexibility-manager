@@ -59,6 +59,11 @@ mutable struct O
 
     output_file::String
     compute_datetime::Union{String, ZonedDateTime, Nothing}
+
+    # Market price parameters
+    market_id::Int        # Trading Manager market ID (e.g. 4 = Germany day-ahead)
+    variable_Hu::Bool     # if true, Hu shrinks to available published price slots
+    tm_base_url::String   # base URL of the Trading Manager service
 end
 
 """
@@ -92,6 +97,7 @@ struct OX
     forecast::Union{Dict{String, Any}, Nothing}
     constraints::Dict{Symbol, Any}
     dynamics::Any
+    prices::Union{Vector{Float64}, Nothing}  # buy price [EUR/kWh] per MPC step, length Hu
 end
 
 """

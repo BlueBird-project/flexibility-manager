@@ -117,6 +117,10 @@ function optimize(digital_twin_file,
 	@info "Reading the forecasts from $forecasts_file."
 	forecasts = parse_forecasts(o.pilot, o, forecasts_file)
 
+	# Fetch day-ahead market prices; updates o.Hu in-place if o.variable_Hu == true
+	@info "Fetching market prices (market_id=$(o.market_id)) from $(o.tm_base_url)."
+	prices, prices_quality = fetch_market_prices(o)
+
 	constraints = build_constraints(o.pilot)
 	@info "Building the constraints."
 
@@ -124,13 +128,14 @@ function optimize(digital_twin_file,
 	dynamo = build_dynamics(o.pilot, o, digital_twin, sensors, forecasts)
 
 	# Store in the input structure
-	ox = OX(digital_twin, sensors, forecasts, constraints, dynamo)
+	ox = OX(digital_twin, sensors, forecasts, constraints, dynamo, prices)
 
 	# Pass the configured Params `O` and inputs `OX` to the MPC
 	opt_time = @elapsed begin
 		oy = mpc_update(o.pilot, o, ox) # One step prediction
 	end
 	@info "Optimization terminated with status $(oy[:OPT_status]) in $(@sprintf("%.2g",opt_time)) seconds."
+	oy[:prices_quality] = prices_quality
 
 	process_end_datetime = Dates.now()
 	process_elapsed_time_in_sec = (process_end_datetime - process_start_datetime) / Second(1)
@@ -178,11 +183,18 @@ function default_code_parameter()
 	output_file = "output.txt"
 
 	compute_datetime = now(tz"UTC") # Use current time if not specified
+
+	# Market price parameters
+	market_id    = 4                        # Germany day-ahead (ENTSOE via Trading Manager)
+	variable_Hu  = false                    # set true to auto-size horizon to published slots
+	tm_base_url  = "http://localhost:9090"  # Trading Manager service URL
+
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
 		mip_gap, warm_start, milp_horizon,
 		continuous_dynamo,
-		output_file, compute_datetime)
+		output_file, compute_datetime,
+		market_id, variable_Hu, tm_base_url)
 end
 
 function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},
