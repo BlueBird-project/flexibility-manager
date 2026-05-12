@@ -50,7 +50,7 @@ Hu            = 48      # MPC horizon — 12 h
 N_SIM         = 96      # ★ DEMO: total steps (24 h); production loop is infinite
 T_AMB         = 20.0    # ★ DEMO: ambient [°C]  (FlexOPTi uses 20.0 internally)
 σ_noise       = 0.05    # ★ DEMO: plant process noise [°C]
-RETRAIN_EVERY = 10      # steps between DT retrains (≈ weekly in production)
+RETRAIN_EVERY = 5       # steps between DT retrains (≈ weekly in production)
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s",
                     datefmt="%H:%M:%S", level=logging.INFO)

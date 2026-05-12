@@ -422,6 +422,8 @@ $RECYCLE.BIN/
 /FlexOPTi/*.txt
 /FlexOPTi/*.lp
 /FlexOPTi/data/
+/FlexOPTi/data/*.txt
+/FlexOPTi/data/*.lp
 Project.toml
 Manifest.toml
 
