@@ -1,7 +1,6 @@
 using HTTP, JSON3, Dates, Printf
 
-const TM_BASE = "http://localhost:9090"
-const GERMANY_MARKET_ID = 4
+const TM_BASE = "http://localhost:11001"
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -25,112 +24,98 @@ function get_markets()
 end
 
 """
-    get_offer_sessions(market_id; date_from, date_to) -> Vector
+    find_market_id(markets, country) -> Int or nothing
 
-Return offer session metadata for a market between two dates (inclusive).
-Each session covers one trading day.  Fields include:
-  offer_id   – unique session ID, pass to get_prices()
-  date_str   – "YYYY-MM-DD" (local CET date of the delivery day)
-  sequence   – revision number (higher = more recent publication)
-  isp_unit   – slot length in minutes (15 for Germany)
-  isp_len    – number of slots in the session (96 = full 24 h at 15-min resolution)
-  ts         – Unix ms of session start (22:00 UTC = midnight CET of delivery day)
+Find market_id by matching country string against market_location (URI or name).
 """
-function get_offer_sessions(market_id::Int;
-                             date_from::Date = today() - Day(7),
-                             date_to::Date   = today() + Day(2))
-    ts_from = to_ms(DateTime(date_from))
-    ts_to   = to_ms(DateTime(date_to) + Day(1))   # include end of last day
-    resp = HTTP.get("$TM_BASE/api/market/$market_id/offerinfo",
-                    query = ["ts_from" => string(ts_from),
-                             "ts_to"   => string(ts_to)])
-    sessions = JSON3.read(resp.body)
-    # Sort by date and sequence so the latest revision is last
-    return sort(collect(sessions); by = s -> (s.date_str, s.sequence))
+function find_market_id(markets, country::String)
+    for m in markets
+        if occursin(country, string(m.market_location))
+            return Int(m.market_id)
+        end
+    end
+    return nothing
 end
 
 """
-    get_prices(offer_id) -> Vector{NamedTuple}
+    get_prices(market_id; date_from, date_to) -> Vector{NamedTuple}
 
-Return the 15-minute price slots for one offer session.
+Return all 15-minute price slots for a market in [date_from, date_to].
 Returns a sorted Vector of NamedTuples:
-  (slot, datetime_utc, datetime_cet, price_eur_mwh)
+  (datetime_utc, datetime_cet, price_eur_mwh)
 
-`slot` runs 1–96 for a full day.
-`datetime_cet` is the wall-clock time in Central European Time (UTC+1 winter, UTC+2 summer).
-The session `ts` is the anchor: slot 1 starts at ts, slot 2 at ts+15 min, etc.
+Uses /api/market/{id}/offer?ts_from=...&ts_to=... directly.
+Each returned item's `ts` field is the slot's own start time in Unix ms.
+`datetime_cet` uses CEST (UTC+2); change cet_offset to Hour(1) for CET (winter).
 """
-function get_prices(offer_id::Int)
-    resp = HTTP.get("$TM_BASE/api/offer/$offer_id")
-    raw  = JSON3.read(resp.body)
+function get_prices(market_id::Int;
+                    date_from::Date = today() - Day(2),
+                    date_to::Date   = today() + Day(1))
+    ts_from = to_ms(DateTime(date_from))
+    ts_to   = to_ms(DateTime(date_to) + Day(1))   # include end of last day
+    resp = HTTP.get("$TM_BASE/api/market/$market_id/offer",
+                    query = ["ts_from" => string(ts_from),
+                             "ts_to"   => string(ts_to)])
+    raw = JSON3.read(resp.body)
     isempty(raw) && return NamedTuple[]
 
-    session_start_utc = from_ms(Int64(first(raw).ts))
-    cet_offset        = Hour(2)   # CEST (summer); use Hour(1) for CET (winter)
+    cet_offset = Hour(2)   # CEST (summer); use Hour(1) for CET (winter)
 
-    result = map(raw) do s
-        slot_offset   = Minute(15 * (Int(s.isp_start) - 1))
-        dt_utc        = session_start_utc + slot_offset
-        dt_cet        = dt_utc + cet_offset
-        (slot          = Int(s.isp_start),
-         datetime_utc  = dt_utc,
-         datetime_cet  = dt_cet,
-         price_eur_mwh = Float64(s.cost_mwh))
+    # Multiple sequences per slot — keep only the latest (highest sequence number)
+    deduped = Dict{Int64, Any}()
+    for s in raw
+        ts = Int64(s.ts)
+        seq = parse(Int, string(s.sequence))
+        if !haskey(deduped, ts) || seq > deduped[ts][1]
+            deduped[ts] = (seq, s)
+        end
     end
-    return sort(result; by = r -> r.slot)
+
+    result = map(values(deduped)) do (_, s)
+        dt_utc = from_ms(Int64(s.ts))
+        dt_cet = dt_utc + cet_offset
+        (datetime_utc  = dt_utc,
+         datetime_cet  = dt_cet,
+         price_eur_mwh = Float64(s.cost))
+    end
+    return sort(result; by = r -> r.datetime_utc)
 end
 
 # ── main ───────────────────────────────────────────────────────────────────────
 
+markets = get_markets()
 println("=== Available markets ===")
-for m in get_markets()
+for m in markets
     println("  id=$(m.market_id)  $(m.market_location)  $(m.market_type)")
 end
 println()
 
+market_id = find_market_id(markets, "Germany")
+if isnothing(market_id)
+    println("No Germany market found. Check market_location values above and update find_market_id().")
+    exit(1)
+end
+
 # ── Query Germany day-ahead prices ────────────────────────────────────────────
-# Change date_from / date_to to any range you need.
+# Change date_from / date_to to any range you need (max 180 days).
 # Day-ahead prices are published ~noon the day before delivery.
-# The system holds the last 5 days + today's published prices.
 
 date_from = today() - Day(2)
 date_to   = today() + Day(1)
 
-println("=== Germany offer sessions ($date_from → $date_to) ===")
-sessions = get_offer_sessions(GERMANY_MARKET_ID; date_from, date_to)
+println("=== Germany prices ($date_from → $date_to), market_id=$market_id ===")
+prices = get_prices(market_id; date_from, date_to)
 
-if isempty(sessions)
-    println("  No sessions found.  Try a wider date range.")
+if isempty(prices)
+    println("  No prices found. The data acquisition job may not have run yet.")
+    println("  Trigger it with:")
+    println("    curl -X POST '$TM_BASE/api/market/country/job/Germany" *
+            "?ts_from=$(to_ms(DateTime(date_from)))&ts_to=$(to_ms(DateTime(date_to) + Day(1)))&override_running_job=false' -d ''")
+    println("  Then check progress with:")
+    println("    curl '$TM_BASE/api/market/country/job/state'")
 else
-    for s in sessions
-        println("  offer_id=$(s.offer_id)  date=$(s.date_str)  " *
-                "revision=$(s.sequence)  slots=$(s.isp_len)  " *
-                "slot_len=$(s.isp_unit) min")
-    end
-    println()
-
-    # ── Build a Dict{DateTime, Float64} across ALL sessions in the window ─────
-    # Key   = slot start time in UTC (use datetime_cet if you prefer local time)
-    # Value = price in EUR/MWh
-    # Using a Dict means you can look up any slot instantly:  prices_dict[dt]
-    # Later sessions (higher sequence) overwrite earlier ones for the same slot,
-    # so you always end up with the most recent published price for each slot.
-    prices_dict = Dict{DateTime, Float64}()
-
-    for s in sessions
-        for p in get_prices(Int(s.offer_id))
-            prices_dict[p.datetime_utc] = p.price_eur_mwh
-        end
-    end
-
-    # ── Display ───────────────────────────────────────────────────────────────
-    latest = last(sessions)
-    println("=== Prices for $(latest.date_str) (offer_id=$(latest.offer_id), " *
-            "revision $(latest.sequence)) ===")
     println("  datetime CET (UTC+2)   |  EUR/MWh")
     println("  -----------------------|----------")
-
-    prices = get_prices(Int(latest.offer_id))
     for p in prices
         @printf("  %s  |  %7.2f\n",
                 Dates.format(p.datetime_cet, "yyyy-mm-dd HH:MM"),
@@ -138,17 +123,23 @@ else
     end
 
     println()
-    isempty(prices) || @printf("  min=%.2f  max=%.2f  mean=%.2f  EUR/MWh\n",
+    @printf("  min=%.2f  max=%.2f  mean=%.2f  EUR/MWh  (%d slots)\n",
         minimum(p.price_eur_mwh for p in prices),
         maximum(p.price_eur_mwh for p in prices),
-        sum(p.price_eur_mwh for p in prices) / length(prices))
+        sum(p.price_eur_mwh for p in prices) / length(prices),
+        length(prices))
 
-    # ── How to use the Dict ───────────────────────────────────────────────────
+    # ── Build Dict{DateTime, Float64} for MPC lookup ──────────────────────────
+    # Key = slot start UTC, value = EUR/MWh
+    prices_dict = Dict{DateTime, Float64}(p.datetime_utc => p.price_eur_mwh for p in prices)
+
     println()
     println("=== Dict usage example ===")
-    example_dt = DateTime(2026, 5, 11, 10, 0, 0)   # 10:00 UTC = 12:00 CEST
+    example_dt = DateTime(today(), Time(10, 0, 0))   # 10:00 UTC today
     if haskey(prices_dict, example_dt)
         @printf("  Price at %s UTC = %.2f EUR/MWh\n", example_dt, prices_dict[example_dt])
+    else
+        println("  (example_dt not in range — adjust example_dt as needed)")
     end
 
     # Sorted vector of (DateTime, price) — useful for MPC horizon iteration

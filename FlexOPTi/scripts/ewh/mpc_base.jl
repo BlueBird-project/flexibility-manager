@@ -51,21 +51,24 @@ const freezer_si = 2 * freezer_r - 1      # = 9
 const pilot = FlexOPTi.Ewh()
 
 o = FlexOPTi.O(
-    Hu,                                           # Hu
-    Δt_s,                                         # Δt [s]
-    false,                                        # init_condition
-    pilot,                                        # pilot
-    "warn",                                       # loglevel  (suppress per-solve noise)
-    "console",                                    # logoutput
-    "fm.log",                                     # logfile
-    false,                                        # log_with_time
-    "HiGHS",                                     # solver
-    0.01,                                       # mip_gap (2% — fine for receding-horizon MPC)
-    false,                                        # warm_start
-    Hu,                                           # milp_horizon (1 = only first step binary, Hu = full MILP)
-    true,                                         # continuous_dynamo
-    "output.txt",                                 # output_file
-    ZonedDateTime(2026, 5, 1, 8, 0, 0, tz"UTC"),  # compute_datetime (8 am)
+    Hu,                                            # Hu
+    Δt_s,                                          # Δt [s]
+    false,                                         # init_condition
+    pilot,                                         # pilot
+    "warn",                                        # loglevel  (suppress per-solve noise)
+    "console",                                     # logoutput
+    "fm.log",                                      # logfile
+    false,                                         # log_with_time
+    "HiGHS",                                       # solver
+    0.01,                                          # mip_gap
+    false,                                         # warm_start
+    Hu,                                            # milp_horizon
+    true,                                          # continuous_dynamo
+    "output.txt",                                  # output_file
+    ZonedDateTime(2026, 5, 1, 8, 0, 0, tz"UTC"),   # compute_datetime (8 am)
+    "Germany",                                     # market_country (unused in standalone sim)
+    false,                                         # variable_Hu
+    "http://localhost:9090",                       # tm_base_url (unused in standalone sim)
 )
 
 FlexOPTi.set_logging(o)

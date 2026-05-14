@@ -20,6 +20,24 @@ _to_ms(dt::DateTime) = Int64(round(datetime2unix(dt) * 1000))
 _from_ms(ms::Int64)  = unix2datetime(ms / 1000)
 
 """
+    _get_market_id(tm_base, country) -> Int
+
+Query the Trading Manager for all registered markets and return the integer
+market_id whose `market_location` contains `country`.
+Throws if no match is found.
+"""
+function _get_market_id(tm_base::String, country::String)::Int
+    resp    = HTTP.get("$tm_base/api/market")
+    markets = JSON3.read(resp.body)
+    for m in markets
+        if occursin(country, string(m.market_location))
+            return Int(m.market_id)
+        end
+    end
+    error("No market found for country '$country'. Available: $(join([string(m.market_location) for m in markets], ", "))")
+end
+
+"""
     _query_tm_prices(tm_base, market_id) -> Dict{DateTime, Float64}
 
 Query the Trading Manager for all available day-ahead prices.
@@ -55,19 +73,20 @@ end
 
 # ── File cache ────────────────────────────────────────────────────────────────
 
-function _cache_path(market_id::Int)
+function _cache_path(country::String)
     dir = joinpath(pkgdir(@__MODULE__), "data", "cache")
     isdir(dir) || mkpath(dir)
-    joinpath(dir, "prices_market_$(market_id).json")
+    joinpath(dir, "prices_$(replace(lowercase(country), " " => "_")).json")
 end
 
-function _save_cache(market_id::Int, prices::Dict{DateTime, Float64})
+function _save_cache(country::String, market_id::Int, prices::Dict{DateTime, Float64})
     payload = Dict(
-        "fetched_at" => string(now(UTC)),
-        "market_id"  => market_id,
-        "prices"     => Dict(string(k) => v for (k, v) in prices),
+        "fetched_at"     => string(now(UTC)),
+        "market_country" => country,
+        "market_id"      => market_id,
+        "prices"         => Dict(string(k) => v for (k, v) in prices),
     )
-    path = _cache_path(market_id)
+    path = _cache_path(country)
     open(path, "w") do io
         JSON.print(io, payload)
     end
@@ -76,8 +95,8 @@ end
 
 const CACHE_MAX_AGE_HOURS = 36
 
-function _load_cache(market_id::Int)::Union{Dict{DateTime, Float64}, Nothing}
-    path = _cache_path(market_id)
+function _load_cache(country::String)::Union{Dict{DateTime, Float64}, Nothing}
+    path = _cache_path(country)
     isfile(path) || return nothing
     raw = JSON.parsefile(path)
     fetched_at = DateTime(raw["fetched_at"][1:19])  # trim timezone suffix if present
@@ -188,7 +207,7 @@ function fetch_market_prices(o::O)::Tuple{Vector{Float64}, Symbol}
     t0      = _resolve_t0(o.compute_datetime)
     Δt_sec  = o.Δt
 
-    @info "Resolving market prices for horizon t0=$(t0) UTC, Hu=$(o.Hu), Δt=$(o.Δt) s"
+    @info "Resolving market prices for horizon t0=$(t0) UTC, Hu=$(o.Hu), Δt=$(o.Δt) s  country=$(o.market_country)"
     prices_dict, quality = _get_prices_dict(o)
 
     if o.variable_Hu && !isempty(prices_dict)
@@ -217,12 +236,15 @@ function _resolve_t0(compute_datetime)::DateTime
 end
 
 function _get_prices_dict(o::O)::Tuple{Dict{DateTime, Float64}, Symbol}
-    # 1. Try live TM query
+    country = o.market_country
+
+    # 1. Try live TM query — resolve market_id dynamically from TM registry
     try
-        prices_dict = _query_tm_prices(o.tm_base_url, o.market_id)
+        market_id   = _get_market_id(o.tm_base_url, country)
+        prices_dict = _query_tm_prices(o.tm_base_url, market_id)
         if !isempty(prices_dict)
-            _save_cache(o.market_id, prices_dict)
-            @info "Market prices fetched live from Trading Manager ($(length(prices_dict)) slots)"
+            _save_cache(country, market_id, prices_dict)
+            @info "Market prices fetched live from Trading Manager (market_id=$market_id, $(length(prices_dict)) slots)"
             return prices_dict, :live
         end
     catch e
@@ -230,7 +252,7 @@ function _get_prices_dict(o::O)::Tuple{Dict{DateTime, Float64}, Symbol}
     end
 
     # 2. Fall back to file cache
-    cached = _load_cache(o.market_id)
+    cached = _load_cache(country)
     if !isnothing(cached) && !isempty(cached)
         @warn "Using cached market prices (TM unavailable) — $(length(cached)) slots"
         return cached, :cached

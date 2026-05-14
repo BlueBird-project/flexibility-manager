@@ -41,24 +41,41 @@ Pkg.activate(joinpath(@__DIR__, "..", ".."))
 
 using FlexOPTi, HTTP, JSON3, SQLite, DBInterface, TimeZones, Dates, Logging, Printf
 
+# ── Settings (operator-tunable; ENV vars override settings.json) ──────────────
+
+function _load_settings()
+    path = get(ENV, "SETTINGS_FILE", joinpath(@__DIR__, "../../settings.json"))
+    isfile(path) || return Dict{String, Any}()
+    d = JSON3.read(read(path, String))
+    Dict{String, Any}(string(k) => v for (k, v) in pairs(d))
+end
+const SETTINGS = _load_settings()
+
 # ── Configuration from environment ────────────────────────────────────────────
 const DB_PATH            = get(ENV, "DB_PATH",
                                joinpath(@__DIR__, "../../data/bb_test.db"))
-const DB_SENSORS_TABLE   = get(ENV, "DB_SENSORS_TABLE",   "measurements")   # ★
-const DB_FORECASTS_TABLE = get(ENV, "DB_FORECASTS_TABLE", "forecasts")       # ★
-const DB_SETPOINTS_TABLE = get(ENV, "DB_SETPOINTS_TABLE", "setpoints")       # ★
+const DB_SENSORS_TABLE   = get(ENV, "DB_SENSORS_TABLE",   "measurements")
+const DB_FORECASTS_TABLE = get(ENV, "DB_FORECASTS_TABLE", "disturbance_forecasts")
+const DB_SETPOINTS_TABLE = get(ENV, "DB_SETPOINTS_TABLE", "setpoints")
 const DT_FILE            = get(ENV, "DT_FILE",
                                joinpath(@__DIR__, "../../data/EWH/inputs/cold_room_model_continuous.json"))
 const DT_R_SCRIPT        = get(ENV, "DT_R_SCRIPT",
                                joinpath(@__DIR__, "../../../dt/EWH_coldrooms_CSTM/ctsmTMB_parameterestimation_callable.R"))
 const DT_R_CWD           = get(ENV, "DT_R_CWD",
                                joinpath(@__DIR__, "../../../dt/EWH_coldrooms_CSTM"))
-const TM_BASE_URL        = get(ENV, "TM_BASE_URL",  "http://localhost:9090")
-const RETRAIN_EVERY_S    = parse(Float64, get(ENV, "RETRAIN_EVERY_H", "168")) * 3600
-const HTTP_PORT          = parse(Int,     get(ENV, "HTTP_PORT", "8080"))
-const Δt_s               = 900.0   # MPC step [s] — 15 min
-const Hu                 = 48      # horizon — 12 h
-const N_ROOMS            = 5       # 4 fridges + 1 freezer
+const TM_BASE_URL        = get(ENV, "TM_BASE_URL",
+                               get(SETTINGS, "tm_base_url", "http://localhost:9090"))
+const RETRAIN_EVERY_S    = parse(Float64, get(ENV, "RETRAIN_EVERY_H",
+                               string(get(SETTINGS, "retrain_every_h", 168)))) * 3600
+const HTTP_PORT          = parse(Int, get(ENV, "HTTP_PORT",
+                               string(get(SETTINGS, "http_port", 8080))))
+const PILOT              = get(ENV, "PILOT",  get(SETTINGS, "pilot",  "Ewh"))
+const SOLVER             = get(ENV, "SOLVER", get(SETTINGS, "solver", "HiGHS"))
+const Δt_s               = parse(Float64, get(ENV, "DELTA_T",
+                               string(get(SETTINGS, "delta_t", 900.0))))
+const Hu                 = parse(Int, get(ENV, "HU",
+                               string(get(SETTINGS, "Hu", 48))))
+const N_ROOMS            = 5
 
 # ── Shared state (MPC loop writes, HTTP server reads) ─────────────────────────
 const _status = Ref{Dict{String,Any}}(Dict("state" => "starting"))
@@ -248,10 +265,10 @@ function mpc_loop(db::SQLite.DB)
             # Dynamics are read and discretised internally from DT_FILE.
             @info "[MPC] Calling FlexOPTi.optimize …"
             oy = FlexOPTi.optimize(DT_FILE, sensors_file, forecasts_file;
-                pilot            = "Ewh",
+                pilot            = PILOT,
                 Hu               = Hu,
                 Δt               = Δt_s,
-                solver           = "Gurobi",
+                solver           = SOLVER,
                 mip_gap          = 0.01,
                 milp_horizon     = 1,
                 compute_datetime = t_solve,
@@ -280,9 +297,9 @@ function mpc_loop(db::SQLite.DB)
                              "updated" => string(now(tz"UTC")))
         end
 
-        # ── Sleep (★ DEMO: 1s; production: Δt_s = 900s) ──────────────────────
+        # ── Sleep until next control timestep ────────────────────────────────
         elapsed = time() - t_wall
-        sleep(max(0.0, 1.0 - elapsed))
+        sleep(max(0.0, Δt_s - elapsed))
     end
 end
 
@@ -296,7 +313,13 @@ start_status_server()
 db = SQLite.DB(DB_PATH)
 @info "[BOOT] Connected to database: $DB_PATH"
 
-@info "[BOOT] Waiting for initial Digital Twin retrain …"
-dt_trigger_retrain(; blocking=true); nothing
+if !isfile(DT_FILE)
+    @warn "[BOOT] No Digital Twin model at $DT_FILE — waiting for dt-ewh container to write it ..."
+    while !isfile(DT_FILE)
+        sleep(10)
+    end
+    @info "[BOOT] Digital Twin model appeared — starting MPC."
+end
+_dt_last_s[] = time()
 
 mpc_loop(db)   # blocks forever — this is the container's main process

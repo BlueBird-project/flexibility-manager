@@ -157,6 +157,8 @@ Do not invent logic for these. If a task seems to require them, ask first.
 | Dynamics JSON schema | `@FlexOPTi/data/EWH/inputs/cold_room_model_continuous.json` |
 | Dummy forecast pattern | `@FlexOPTi/scripts/ewh/mpc_base.jl` |
 | Trading Manager query example | `@FlexOPTi/scripts/tm/query_prices.jl` |
+| Trading Manager Docker Build | `@~/DTU/BlueBird/TM/trading-manager/compose/local_dev/`|
+| A full run of the services without dockers | `@FlexOPTi/scripts/ewhdr_controller.jl`|
 
 ---
 

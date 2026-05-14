@@ -118,7 +118,7 @@ function optimize(digital_twin_file,
 	forecasts = parse_forecasts(o.pilot, o, forecasts_file)
 
 	# Fetch day-ahead market prices; updates o.Hu in-place if o.variable_Hu == true
-	@info "Fetching market prices (market_id=$(o.market_id)) from $(o.tm_base_url)."
+	@info "Fetching market prices (country=$(o.market_country)) from $(o.tm_base_url)."
 	prices, prices_quality = fetch_market_prices(o)
 
 	constraints = build_constraints(o.pilot)
@@ -185,16 +185,16 @@ function default_code_parameter()
 	compute_datetime = now(tz"UTC") # Use current time if not specified
 
 	# Market price parameters
-	market_id    = 4                        # Germany day-ahead (ENTSOE via Trading Manager)
-	variable_Hu  = false                    # set true to auto-size horizon to published slots
-	tm_base_url  = "http://localhost:9090"  # Trading Manager service URL
+	market_country = "Germany"               # resolved to market_id at query time via TM registry
+	variable_Hu    = false                   # set true to auto-size horizon to published slots
+	tm_base_url    = "http://localhost:9090" # Trading Manager service URL
 
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
 		mip_gap, warm_start, milp_horizon,
 		continuous_dynamo,
 		output_file, compute_datetime,
-		market_id, variable_Hu, tm_base_url)
+		market_country, variable_Hu, tm_base_url)
 end
 
 function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},

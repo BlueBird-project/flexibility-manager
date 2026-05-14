@@ -1,0 +1,90 @@
+# EWH pilot compose file.
+# Usage: docker compose -f docker-compose.ewh.yml up
+#
+# Services:
+#   dummy-forecast — initialises DB schema, writes synthetic disturbance forecasts on cadence
+#   fc             — Flexibility Controller (Julia/FlexOPTi)  → http://localhost:8080
+#   control-room   — operator web dashboard                   → http://localhost:9000
+#   dt-ewh         — Digital Twin (R/ctsmTMB); run manually:
+#                    docker compose -f docker-compose.ewh.yml run --rm dt-ewh
+#
+# Shared volume:
+#   dt-volume      — DT writes dynamics JSON here; FC reads from here
+
+services:
+
+  dummy-forecast:
+    build:
+      context: ./forecasting/dummy
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/bb.db
+    volumes:
+      - db-data:/data
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  fc:
+    build:
+      context: ./FlexOPTi
+      dockerfile: Dockerfile
+    depends_on:
+      - dummy-forecast
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/bb.db
+      SETTINGS_FILE: /app/settings.json
+      TM_BASE_URL: http://tm-service:8080
+    volumes:
+      - db-data:/data
+      - dt-volume:/dt-volume
+    ports:
+      - "8080:8080"
+    networks:
+      - default
+      - tm-net
+    restart: unless-stopped
+
+  control-room:
+    build:
+      context: ./control_room
+      dockerfile: Dockerfile
+    depends_on:
+      - fc
+      - dummy-forecast
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/bb.db
+      FC_URL: http://fc:8080
+      FORECAST_URL: http://dummy-forecast:5000
+      PORT: "9000"
+    volumes:
+      - db-data:/data
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  dt-ewh:
+    build:
+      context: ./dt/EWH_coldrooms_CSTM
+      dockerfile: Dockerfile
+    volumes:
+      - dt-volume:/dt-volume
+    profiles:
+      - retrain
+    restart: "no"
+
+volumes:
+  db-data:
+  dt-volume:
+
+networks:
+  default:
+  tm-net:
+    external: true
+    name: local_tm-net

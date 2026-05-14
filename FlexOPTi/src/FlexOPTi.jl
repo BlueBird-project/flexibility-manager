@@ -18,19 +18,11 @@ using Printf
 using HTTP
 using JSON, JSON3
 using JuMP
-using HiGHS, Gurobi
+using HiGHS
 using LinearAlgebra
-using Random 
-using SparseArrays
-using Symbolics 
+using Random
 using Logging, LoggingExtras
 using Dates, TimeZones
-using Debugger
-using Plots
-
-#Debug stage
-using Infiltrator
-using Ipopt
 
 # Global
 
@@ -57,9 +49,6 @@ include(joinpath(@__DIR__, "pilots", "montcada", "Montcada.jl"))
 
 # EWH specific
 include(joinpath(@__DIR__, "pilots", "ewh", "Ewh.jl"))
-
-# Plots 
-include(joinpath(@__DIR__, "core", "plots", "plot_state.jl"))
 
 # API
 export optimize , # Core MPC function 

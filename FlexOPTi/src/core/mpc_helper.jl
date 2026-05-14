@@ -5,42 +5,22 @@
 #  Pilot-specific overrides (e.g. apply_warm_start!) live in each pilot's file.
 # =============================================================================
 
-# Reuse a single Gurobi environment across all solves to avoid printing the
-# license banner on every mpc_update call.
-const _GRB_ENV = Ref{Any}(nothing)
-
-function _grb_env()
-    if isnothing(_GRB_ENV[])
-        _GRB_ENV[] = Gurobi.Env()
-    end
-    return _GRB_ENV[]
-end
-
 """
     initialize_model(o::O) -> JuMP.Model
 
 Create a JuMP model for the solver named in `o.solver` and apply the relative
 MIP gap tolerance from `o.mip_gap`.  Falls back to HiGHS on any load failure.
-Gurobi reuses a single shared environment so the license banner prints once.
 """
 function initialize_model(o::O)
     local model
     silent = lowercase(o.loglevel) != "debug"
     try
-        if o.solver == "Gurobi"
-            model = Model(optimizer_with_attributes(
-                () -> Gurobi.Optimizer(_grb_env()),
-                MOI.Silent()                  => silent,
-                MOI.RelativeGapTolerance()    => o.mip_gap,
-            ))
-        else
-            solver = Symbol(o.solver)
-            model  = Model(optimizer_with_attributes(
-                getfield(@__MODULE__, solver).Optimizer,
-                MOI.Silent()                  => silent,
-                MOI.RelativeGapTolerance()    => o.mip_gap,
-            ))
-        end
+        solver = Symbol(o.solver)
+        model  = Model(optimizer_with_attributes(
+            getfield(@__MODULE__, solver).Optimizer,
+            MOI.Silent()               => silent,
+            MOI.RelativeGapTolerance() => o.mip_gap,
+        ))
         @info "Using solver $(o.solver)."
     catch
         @warn "Solver '$(o.solver)' not found or failed to load. Defaulting to HiGHS."
