@@ -2,7 +2,9 @@
 #  Market price fetching with file-based cache and graceful fallback
 #
 #  Call order inside optimize():
-#    fetch_market_prices(o) -> (prices_eur_kwh::Vector{Float64}, quality::Symbol)
+#    fetch_market_prices(o) -> (prices_eur_wh::Vector{Float64}, quality::Symbol)
+#    Returned vector is EUR/Wh (TM gives EUR/MWh, divided by 1e6).
+#    Multiply by 1000 to display as EUR/kWh.
 #
 #  quality values (stored in oy[:prices_quality]):
 #    :live       — fresh from Trading Manager
@@ -12,7 +14,7 @@
 # =============================================================================
 
 const PRICE_SLOT_MINUTES  = 15
-const EUR_MWH_TO_EUR_WH   = 1 / 1_000_000.0   # power in W, time in s → cost in EUR
+const EUR_MWH_TO_EUR_WH   = 1 / 1_000_000.0   # 1 EUR/MWh = 1e-6 EUR/Wh
 
 # ── Low-level TM helpers (same logic as query_prices.jl standalone script) ───
 

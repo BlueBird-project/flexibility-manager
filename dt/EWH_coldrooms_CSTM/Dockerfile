@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN Rscript -e "install.packages(c('ctsmTMB', 'jsonlite', 'dplyr'), repos='https://cloud.r-project.org', Ncpus=4)"
+RUN Rscript -e "install.packages(c('remotes', 'jsonlite', 'dplyr', 'expm'), repos='https://cloud.r-project.org', Ncpus=4)"
+RUN Rscript -e "remotes::install_github('phillipbvetter/ctsmTMB', dependencies=TRUE)"
 
 WORKDIR /dt
 

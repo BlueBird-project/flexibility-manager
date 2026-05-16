@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request
 
 logging.basicConfig(
     level=logging.INFO,
@@ -143,6 +143,29 @@ def setpoints():
     return jsonify(rows)
 
 
+CLEARABLE_TABLES = ["setpoints", "measurements", "disturbance_forecasts"]
+
+
+@app.route("/clear", methods=["POST"])
+def clear():
+    table = request.json.get("table") if request.json else None
+    if table and table not in CLEARABLE_TABLES:
+        return jsonify({"error": f"unknown table '{table}'"}), 400
+    tables = [table] if table else CLEARABLE_TABLES
+    deleted = {}
+    try:
+        with _db() as conn:
+            for t in tables:
+                n = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                conn.execute(f"DELETE FROM {t}")
+                deleted[t] = n
+        log.info("Cleared tables: %s", deleted)
+        return jsonify({"cleared": deleted})
+    except Exception as exc:
+        log.error("Clear failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/forecasts")
 def forecasts():
     rows = _query(
@@ -188,6 +211,15 @@ def dashboard():
   <a href="/forecasts">forecasts</a>
 </p>
 
+<h2>Database</h2>
+<div class="card">
+  <button onclick="clearTable('setpoints')"    style="margin:4px;padding:6px 14px;background:#2a1a1a;color:#f44;border:1px solid #f44;border-radius:4px;cursor:pointer">Clear setpoints</button>
+  <button onclick="clearTable('measurements')" style="margin:4px;padding:6px 14px;background:#2a1a1a;color:#f44;border:1px solid #f44;border-radius:4px;cursor:pointer">Clear measurements</button>
+  <button onclick="clearTable('disturbance_forecasts')" style="margin:4px;padding:6px 14px;background:#2a1a1a;color:#f44;border:1px solid #f44;border-radius:4px;cursor:pointer">Clear forecasts</button>
+  <button onclick="clearTable(null)"           style="margin:4px;padding:6px 14px;background:#3a0000;color:#f44;border:2px solid #f44;border-radius:4px;cursor:pointer;font-weight:bold">⚠ Clear ALL</button>
+  <span id="clear-msg" style="margin-left:12px;color:#fa4"></span>
+</div>
+
 <h2>Services</h2>
 <div id="services-placeholder" class="card">Loading…</div>
 
@@ -198,6 +230,17 @@ def dashboard():
 <div id="setpoints-placeholder" class="card">Loading…</div>
 
 <script>
+async function clearTable(table) {
+  const label = table || 'ALL tables';
+  if (!confirm(`Delete all rows from ${label}?`)) return;
+  const body = table ? JSON.stringify({table}) : '{}';
+  const r = await fetch('/clear', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  const j = await r.json();
+  const msg = j.error ? `Error: ${j.error}` : 'Cleared: ' + JSON.stringify(j.cleared);
+  document.getElementById('clear-msg').innerText = msg;
+  setTimeout(() => document.getElementById('clear-msg').innerText = '', 5000);
+}
+
 async function load(url) {
   try { return await (await fetch(url)).json(); }
   catch(e) { return {error: String(e)}; }

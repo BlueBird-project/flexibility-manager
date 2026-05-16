@@ -7,6 +7,8 @@
 #   control-room   — operator web dashboard                   → http://localhost:9000
 #   dt-ewh         — Digital Twin (R/ctsmTMB); run manually:
 #                    docker compose -f docker-compose.ewh.yml run --rm dt-ewh
+#   fc-sim         — Closed-loop simulation demo (yesterday noon → tomorrow midnight); run manually:
+#                    docker compose -f docker-compose.ewh.yml run --rm fc-sim
 #
 # Shared volume:
 #   dt-volume      — DT writes dynamics JSON here; FC reads from here
@@ -68,6 +70,28 @@ services:
     ports:
       - "9000:9000"
     restart: unless-stopped
+
+  fc-sim:
+    build:
+      context: ./FlexOPTi
+      dockerfile: Dockerfile
+    command: ["/app/scripts/ewh/sim_demo.jl"]
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/bb.db
+      SETTINGS_FILE: /app/settings.json
+      TM_BASE_URL: http://tm-service:8080
+    volumes:
+      - db-data:/data
+      - dt-volume:/dt-volume
+      - ./FlexOPTi/data/EWH/outputs:/app/data/EWH/outputs
+    networks:
+      - default
+      - tm-net
+    profiles:
+      - sim
+    restart: "no"
 
   dt-ewh:
     build:
