@@ -283,7 +283,9 @@ function build_objective!(::Ewh, model::JuMP.Model, v::EwhVars, o::O, ox::OX)
     Hu = o.Hu
     Δt = o.Δt
 
-    # ox.prices is the authoritative buy price signal (EUR/kWh, length Hu).
+    # ox.prices is the authoritative buy price signal (EUR/Wh, length Hu).
+    # Note: objective `Δt[s] * p[W] * ToU[EUR/Wh]` has units EUR·s/h,
+    # off by 3600 from EUR. Optimum is unchanged for this linear objective.
     # Fall back to ox.forecast["ToU_buy"] only when prices are unavailable.
     ToU_buy  = !isnothing(ox.prices) ? ox.prices : ox.forecast["ToU_buy"]
     ToU_sell = ox.forecast["ToU_sell"]

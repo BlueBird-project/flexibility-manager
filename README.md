@@ -30,14 +30,15 @@ Demand-response control system for local energy assets across EU partner sites. 
 
 **Services**
 
-| Service | Language | Role |
-|---------|----------|------|
-| `fc` | Julia (FlexOPTi) | MPC loop — reads dynamics + forecasts + prices, writes setpoints |
-| `dummy-forecast` | Python | Writes synthetic disturbance forecasts to DB on cadence |
-| `dt-ewh` | R (ctsmTMB) | Parameter estimation; writes dynamics JSON to shared volume |
-| Trading Manager | External | Fetches day-ahead electricity prices from ENTSOE |
-| Database | SQLite | Shared time-series store (measurements, forecasts, setpoints, prices) |
-| `control-room` | Python (Flask) | Operator dashboard — monitors system, queries KPIs |
+| Service | Language | Profile | Role |
+|---------|----------|---------|------|
+| `fc` | Julia (FlexOPTi) | _(always)_ | MPC loop — reads dynamics + forecasts + prices, writes setpoints |
+| `dummy-forecast` | Python | _(always)_ | Writes synthetic disturbance forecasts to DB on cadence |
+| `control-room` | Python (Flask) | _(always)_ | Operator dashboard — monitors system, queries KPIs |
+| `dt-ewh` | R (ctsmTMB) | `retrain` | Parameter estimation; writes dynamics JSON to shared volume (one-shot) |
+| `fc-sim` | Julia (FlexOPTi) | `sim` | Closed-loop MPC simulation demo (yesterday noon → tomorrow midnight); writes setpoints + `sim_demo.jld2` |
+| Trading Manager | External | — | Day-ahead electricity prices from ENTSOE |
+| Database | SQLite | — | Shared time-series store (measurements, forecasts, setpoints) |
 
 **Data flow**
 
@@ -74,7 +75,7 @@ This starts three services:
 | `fc` | 8080 | Runs MPC loop (HiGHS solver, EWH pilot) |
 | `control-room` | 9000 | Operator dashboard |
 
-The FC completes its first MPC iteration within ~30 s of startup (pre-baked Digital Twin model, no blocking retrain).
+The FC polls the shared `dt-volume` for `cold_room_model_continuous.json`. If absent, it blocks until the DT container writes one. To seed the volume, run the `dt-ewh` retrain (below) before first start.
 
 ### Run in background
 
@@ -89,16 +90,31 @@ docker compose -f docker-compose.ewh.yml logs -f fc
 docker compose -f docker-compose.ewh.yml down
 ```
 
-### Trigger a Digital Twin retrain (optional)
+### Trigger a Digital Twin retrain
 
-The DT container is gated behind the `retrain` profile and runs once then exits.
-Trigger it manually when you want updated model parameters:
+The `dt-ewh` container is gated behind the `retrain` profile and runs once then exits.
+Run it before the first FC start to seed `dt-volume`, or any time you want updated model parameters:
 
 ```bash
-docker compose -f docker-compose.ewh.yml run --rm dt-ewh
+docker compose -f docker-compose.ewh.yml --profile retrain run --rm dt-ewh
 ```
 
 The FC picks up the new `cold_room_model_continuous.json` from the shared volume at the next iteration.
+
+### Run the closed-loop simulation demo
+
+The `fc-sim` container runs `scripts/ewh/sim_demo.jl` — a closed-loop MPC simulation over the window yesterday noon → tomorrow midnight, using real TM prices and synthetic disturbances. Runs as fast as possible (no wall-clock sleep). Stop the `fc` service first to avoid both writing to the DB:
+
+```bash
+docker compose -f docker-compose.ewh.yml stop fc
+docker compose -f docker-compose.ewh.yml --profile sim run --rm fc-sim
+```
+
+Results land in `FlexOPTi/data/EWH/outputs/sim_demo.jld2`. Plot with:
+
+```bash
+julia --project=FlexOPTi/scripts/ewh FlexOPTi/scripts/ewh/sim_plot.jl
+```
 
 ---
 
@@ -194,6 +210,22 @@ curl http://localhost:9000/setpoints
 curl http://localhost:9000/forecasts
 ```
 
+**Clear DB tables**
+
+```bash
+# Clear a specific table
+curl -X POST http://localhost:9000/clear \
+     -H "Content-Type: application/json" \
+     -d '{"table":"setpoints"}'
+
+# Clear all clearable tables (setpoints, measurements, disturbance_forecasts)
+curl -X POST http://localhost:9000/clear \
+     -H "Content-Type: application/json" \
+     -d '{}'
+```
+
+The dashboard at http://localhost:9000 also exposes Clear buttons for each table.
+
 **FC detailed status** (direct)
 
 ```bash
@@ -212,16 +244,15 @@ TM_BASE_URL=http://tm-service:9090
 
 The FC will query the TM for day-ahead prices at each iteration. It discovers the correct `market_id` from the TM registry by matching `market_country` (default: `"Germany"`). If the TM is unreachable, the FC falls back to a file cache (valid for 36 h), then to flat-zero prices with a logged warning.
 
-To start the Trading Manager alongside the FC:
+To start the Trading Manager alongside the FC, clone and run it from its repo
+([BlueBird-project/trading-manager](https://github.com/BlueBird-project/trading-manager)) and follow the specific instructions
 
-```bash
-# From the TM repo
-cd ~/DTU/BlueBird/TM/trading-manager/compose/local_dev
-docker compose up -d
-
-# Then start the FC, pointing at the TM
-TM_BASE_URL=http://localhost:9090 docker compose -f docker-compose.ewh.yml up --build
+# Then, from the flexibility-manager repo, start the FC pointing at the TM
+TM_BASE_URL=http://tm-service:8080 docker compose -f docker-compose.ewh.yml up --build
 ```
+
+The TM is exposed on host port `9090` (container port `8080`). Inside the
+shared `local_tm-net` Docker network, the FC reaches it as `tm-service:8080`.
 
 ---
 
@@ -286,33 +317,44 @@ DB_PATH=FlexOPTi/data/bb.db FC_URL=http://localhost:8080 python main.py
 
 ```
 flexibility-manager/
-├── FlexOPTi/                  Julia optimization library
+├── CLAUDE.md                  Project reference for Claude Code
+├── README.md
+├── walkthrough.ipynb          Step-by-step notebook of the full system
+├── temp-db-read.py            Quick DB inspection script
+├── docker-compose.ewh.yml     EWH pilot compose file
+├── .env.example               Environment variable reference
+│
+├── FlexOPTi/                  Julia optimization library (MPC engine)
 │   ├── src/
 │   │   ├── FlexOPTi.jl        Module entry point
 │   │   ├── core/
 │   │   │   ├── types.jl       O / OX / OY structs + pilot dispatch
 │   │   │   ├── fm_optimize.jl Public API entry point
 │   │   │   ├── fetch_prices.jl Trading Manager client + cache
+│   │   │   ├── mpc_update.jl  Core MPC solve (shared across pilots)
 │   │   │   └── ...
 │   │   └── pilots/
 │   │       ├── ewh/           EWH cold-room pilot
 │   │       └── montcada/      Montcada building pilot
 │   ├── scripts/
 │   │   └── ewh/
-│   │       ├── dr_controller.jl  Self-driving MPC loop (container entrypoint)
-│   │       └── mpc_base.jl       Standalone simulation reference
-│   ├── data/EWH/inputs/       Pre-baked Digital Twin JSON
+│   │       ├── dr_controller.jl  Self-driving MPC loop (fc container)
+│   │       ├── sim_demo.jl       Closed-loop simulation (fc-sim container)
+│   │       ├── sim_plot.jl       Plot sim_demo.jld2 → sim_demo.png
+│   │       ├── mpc_plot.jl       Legacy plot script
+│   │       └── mpc_base.jl       Standalone single-shot reference
+│   ├── data/EWH/
+│   │   ├── inputs/            Pre-baked Digital Twin JSON
+│   │   └── outputs/           sim_demo.jld2 / sim_demo.png
 │   ├── settings.json          Operator config (pilot, solver, horizon, …)
-│   └── Dockerfile
+│   └── Dockerfile             ENTRYPOINT=julia, CMD=dr_controller.jl
 ├── dt/
 │   └── EWH_coldrooms_CSTM/    R parameter estimation scripts + Dockerfile
 ├── forecasting/
 │   └── dummy/                 Dummy forecast service + Dockerfile
 ├── control_room/              Flask dashboard + Dockerfile
-├── db/
-│   └── init.sql               Complete DB schema
-├── docker-compose.ewh.yml     EWH pilot compose file
-└── .env.example               Environment variable reference
+└── db/
+    └── init.sql               Complete DB schema
 ```
 
 ---
