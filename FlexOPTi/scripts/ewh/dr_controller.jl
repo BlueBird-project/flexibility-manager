@@ -39,7 +39,7 @@ Environment variables (set in docker-compose or .env):
 using Pkg
 Pkg.activate(joinpath(@__DIR__, "..", ".."))
 
-using FlexOPTi, HTTP, JSON3, SQLite, DBInterface, TimeZones, Dates, Logging, Printf
+using FlexOPTi, HTTP, JSON3, SQLite, DBInterface, TimeZones, Dates, Logging, LoggingExtras, Printf
 
 # ── Settings (operator-tunable; ENV vars override settings.json) ──────────────
 
@@ -306,6 +306,12 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ══════════════════════════════════════════════════════════════════════════════
+
+global_logger(FormatLogger() do io, args
+    level = uppercase(string(args.level))
+    ts    = Dates.format(now(), "yyyy-mm-dd HH:MM:SS")
+    println(io, "$ts [FC] $level $(args.message)")
+end)
 
 @info "[BOOT] EWH dr_controller starting …"
 start_status_server()
