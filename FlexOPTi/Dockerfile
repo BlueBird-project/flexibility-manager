@@ -15,7 +15,6 @@ COPY data/EWH/inputs/  ./data/EWH/inputs/
 COPY data/cache/       ./data/cache/
 COPY scripts/          ./scripts/
 COPY settings.json     ./
-COPY entrypoint.sh     ./
 
 # Create output directories that mpc_main.jl writes to
 RUN mkdir -p /app/data/EWH/outputs /app/data/montcada/outputs
