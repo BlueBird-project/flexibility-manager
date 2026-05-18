@@ -29,6 +29,7 @@ import json as _json
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [DUMMY-FORECAST] %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
 

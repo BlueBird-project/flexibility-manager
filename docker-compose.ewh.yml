@@ -75,7 +75,7 @@ services:
     build:
       context: ./FlexOPTi
       dockerfile: Dockerfile
-    command: ["/app/scripts/ewh/sim_demo.jl"]
+    entrypoint: ["/bin/bash", "-c", "cp /app/data/EWH/inputs/cold_room_model_continuous.json /dt-volume/ && julia --project=/app /app/scripts/ewh/sim_demo.jl"]
     env_file:
       - .env
     environment:
