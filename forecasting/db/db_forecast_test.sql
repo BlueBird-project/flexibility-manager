@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS "forecasts" (
     FOREIGN KEY("asset_id") REFERENCES "assets"("asset_id")
 );
 
+CREATE TABLE IF NOT EXISTS "energy_values" (
+    "id" INTEGER PRIMARY KEY,
+    "ds" TEXT,
+    "asset_id" integer,
+    "value" REAL,
+    UNIQUE (ds, asset_id)
+);
+
 
 CREATE TABLE IF NOT EXISTS "assets" (
     "asset_id" INTEGER PRIMARY KEY NOT NULL,
