@@ -1,89 +1,108 @@
-# Análisis Detallado — BlueBird Flexibility Manager
+Aquí tienes la traducción al inglés, conservando la estructura Markdown, las tablas y los bloques de código. Al traducir documentación técnica en Markdown, es buena práctica mantener intacto el formato y no alterar el contenido dentro de bloques de código salvo que sea texto descriptivo claramente no ejecutable. [docs.github](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-and-highlighting-code-blocks)
 
-## 1. Visión General
+# Detailed Analysis — BlueBird Flexibility Manager
 
-El proyecto **BlueBird Flexibility Manager** es un sistema de **demand-response** para el control de activos energéticos locales en sitios de socios europeos. Cada tipo de activo se denomina **piloto** (cámaras frigoríficas EWH, HVAC de edificios Montcada, obras hidráulicas Enlion, calefacción urbana). El sistema ejecuta **Control Predictivo por Modelo (MPC)** económico con cadencia configurable, escribe los puntos de consigna óptimos en una base de datos compartida y los publica al Building Management System (BMS) a través de un Knowledge Engine.
 
----
+## 1. Overview
 
-## 2. Arquitectura General
+
+The **BlueBird Flexibility Manager** project is a **demand-response** system for controlling local energy assets at European partner sites. Each type of asset is called a **pilot** (EWH cold rooms, Montcada building HVAC, Enlion water works, district heating). The system runs economic **Model Predictive Control (MPC)** at a configurable cadence, writes optimal setpoints to a shared database, and publishes them to the Building Management System (BMS) through a Knowledge Engine.
+
+
+***
+
+
+## 2. General Architecture
+
 
 ```
-┌─────────────────┐   dynamics JSON    ┌──────────────────────┐
+┌─────────────────┐   dynamics JSON     ┌──────────────────────┐
 │  Digital Twin   │ ─────────────────► │                      │
-│  (R/ctsmTMB)    │   shared volume    │  Flexibility         │
-└─────────────────┘                    │  Controller          │
-                                       │  (Julia/FlexOPTi)    │
-┌─────────────────┐   DB forecasts     │                      │
-│  Disturbances   │ ─────────────────► │  · lee dinámica      │
-│  Forecast       │                    │  · lee previsiones    │
-└─────────────────┘                    │  · obtiene precios    │
-                                       │  · escribe setpoints  │
-┌─────────────────┐   HTTP prices      │                      │
+│  (R/ctsmTMB)    │   shared volume     │  Flexibility        │
+└─────────────────┘                     │  Controller         │
+                                        │  (Julia/FlexOPTi)   │
+┌─────────────────┐   DB forecasts      │                      │
+│  Disturbances   │ ─────────────────► │  · reads dynamics    │
+│  Forecast       │                     │  · reads forecasts   │
+└─────────────────┘                     │  · gets prices       │
+                                        │  · writes setpoints  │
+┌─────────────────┐   HTTP prices       │                      │
 │  Trading        │ ─────────────────► │                      │
-│  Manager (ext.) │                    └──────────────────────┘
-└─────────────────┘                             │
-                                                │ setpoints
-┌─────────────────┐   shared DB        ┌────────▼─────────────┐
+│  Manager (ext.) │                     └──────────────────────┘
+└─────────────────┘                                  │
+                                                     │ setpoints
+┌─────────────────┐   shared DB          ┌────────▼─────────────┐
 │  Control Room   │ ◄────────────────► │  Database (SQLite)   │
-│  (dashboard)    │                    └──────────────────────┘
+│  (dashboard)    │                     └──────────────────────┘
 └─────────────────┘
 ```
 
-### 2.1 Servicios Docker
 
-| Servicio | Lenguaje | Puerto | Perfil | Rol |
+### 2.1 Docker Services
+
+
+| Service | Language | Port | Profile | Role |
 |----------|----------|--------|--------|-----|
-| `dummy-forecast` | Python 3.12 | 5000 | _(siempre)_ | Inicializa esquema BD; escribe previsiones sintéticas cada 15 min |
-| `fc` | Julia 1.12 (FlexOPTi) | 8080 | _(siempre)_ | Bucle MPC — lee dinámica + previsiones + precios, escribe setpoints |
-| `control-room` | Python 3.12 (Flask) | 9000 | _(siempre)_ | Dashboard de operador — monitoriza el sistema y KPIs |
-| `dt-ewh` | R 4.4.2 (ctsmTMB) | — | `retrain` | Estimación de parámetros del Digital Twin (ejecución única) |
-| `fc-sim` | Julia 1.12 | — | `sim` | Simulación MPC en bucle cerrado (demo) |
-| Trading Manager | Externo | 9090 | — | Precios day-ahead de electricidad (ENTSOE) |
+| `dummy-forecast` | Python 3.12 | 5000 | _(always)_ | Initializes DB schema; writes synthetic forecasts every 15 min |
+| `fc` | Julia 1.12 (FlexOPTi) | 8080 | _(always)_ | MPC loop — reads dynamics + forecasts + prices, writes setpoints |
+| `control-room` | Python 3.12 (Flask) | 9000 | _(always)_ | Operator dashboard — monitors the system and KPIs |
+| `dt-ewh` | R 4.4.2 (ctsmTMB) | — | `retrain` | Digital Twin parameter estimation (single run) |
+| `fc-sim` | Julia 1.12 | — | `sim` | Closed-loop MPC simulation (demo) |
+| Trading Manager | External | 9090 | — | Day-ahead electricity prices (ENTSOE) |
 
-### 2.2 Redes y Volúmenes
 
-- **Redes Docker:**
-  - `flexibility-manager_default` — red interna entre servicios
-  - `local_tm-net` — red externa para comunicación con el Trading Manager
-- **Volúmenes compartidos:**
-  - `db-data` → `/data/bb.db` (base de datos SQLite compartida)
-  - `dt-volume` → intercambio de modelos JSON entre Digital Twin y FC
+### 2.2 Networks and Volumes
 
-### 2.3 Flujo de Datos
 
-1. **`dummy-forecast` → BD:** Escribe previsiones de perturbaciones (temperatura ambiente, carga de puertas) cada 15 minutos.
-2. **`fc` ← BD:** Lee mediciones (condiciones iniciales) y previsiones de perturbaciones.
-3. **`fc` → BD:** Escribe setpoints óptimos de refrigeración.
-4. **`dt-ewh` → `dt-volume`:** Escribe `cold_room_model_continuous.json` con parámetros estimados.
-5. **`fc` ← `dt-volume`:** Lee el modelo dinámico del Digital Twin en cada iteración.
-6. **`fc` → Trading Manager:** Obtiene precios day-ahead de electricidad vía HTTP.
-7. **`control-room` ← BD / fc:** Lee estado del sistema para visualización.
+- **Docker networks:**
+  - `flexibility-manager_default` — internal network between services
+  - `local_tm-net` — external network for communication with the Trading Manager
+- **Shared volumes:**
+  - `db-data` → `/data/bb.db` (shared SQLite database)
+  - `dt-volume` → JSON model exchange between Digital Twin and FC
 
----
 
-## 3. Configuración del Sistema
+### 2.3 Data Flow
 
-### 3.1 Variables de Entorno (`.env`)
 
-| Variable | Valor por defecto | Descripción |
+1. **`dummy-forecast` → DB:** Writes disturbance forecasts (ambient temperature, door loads) every 15 minutes.
+2. **`fc` ← DB:** Reads measurements (initial conditions) and disturbance forecasts.
+3. **`fc` → DB:** Writes optimal cooling setpoints.
+4. **`dt-ewh` → `dt-volume`:** Writes `cold_room_model_continuous.json` with estimated parameters.
+5. **`fc` ← `dt-volume`:** Reads the dynamic model from the Digital Twin at each iteration.
+6. **`fc` → Trading Manager:** Gets day-ahead electricity prices via HTTP.
+7. **`control-room` ← DB / fc:** Reads system state for visualization.
+
+
+***
+
+
+## 3. System Configuration
+
+
+### 3.1 Environment Variables (`.env`)
+
+
+| Variable | Default value | Description |
 |----------|-------------------|-------------|
-| `DB_PATH` | `/data/bb.db` | Ruta de la base de datos SQLite |
-| `PILOT` | `Ewh` | Piloto activo (`Ewh`, `Montcada`) |
-| `SOLVER` | `HiGHS` | Solver de optimización MILP |
-| `HU` | `48` | Horizonte de control (pasos) |
-| `DELTA_T` | `900.0` | Paso temporal (segundos) → 15 min |
-| `RETRAIN_EVERY_H` | `168` | Re-entrenamiento semanal del DT (horas) |
-| `MIP_GAP` | `0.01` | Tolerancia de gap del solver (1%) |
-| `HTTP_PORT` | `8080` | Puerto del servidor de estado del FC |
-| `TM_BASE_URL` | `http://tm-service:9090` | URL del Trading Manager |
-| `MARKET_COUNTRY` | `Germany` | País para consulta de precios |
-| `CADENCE_S` | `900` | Intervalo de escritura de previsiones (s) |
-| `HORIZON_STEPS` | `48` | Número de pasos por previsión |
-| `T_AMBIENT` | `18.0` | Temperatura ambiente constante (°C) |
-| `N_ROOMS` | `5` | Número de cámaras frigoríficas |
+| `DB_PATH` | `/data/bb.db` | Path to the SQLite database |
+| `PILOT` | `Ewh` | Active pilot (`Ewh`, `Montcada`) |
+| `SOLVER` | `HiGHS` | MILP optimization solver |
+| `HU` | `48` | Control horizon (steps) |
+| `DELTA_T` | `900.0` | Time step (seconds) → 15 min |
+| `RETRAIN_EVERY_H` | `168` | Weekly DT retraining (hours) |
+| `MIP_GAP` | `0.01` | Solver gap tolerance (1%) |
+| `HTTP_PORT` | `8080` | FC status server port |
+| `TM_BASE_URL` | `http://tm-service:9090` | Trading Manager URL |
+| `MARKET_COUNTRY` | `Germany` | Country for price query |
+| `CADENCE_S` | `900` | Forecast writing interval (s) |
+| `HORIZON_STEPS` | `48` | Number of steps per forecast |
+| `T_AMBIENT` | `18.0` | Constant ambient temperature (°C) |
+| `N_ROOMS` | `5` | Number of cold rooms |
 
-### 3.2 Settings del FC (`FlexOPTi/settings.json`)
+
+### 3.2 FC Settings (`FlexOPTi/settings.json`)
+
 
 ```json
 {
@@ -100,99 +119,118 @@ El proyecto **BlueBird Flexibility Manager** es un sistema de **demand-response*
 }
 ```
 
-- **`Hu=48`**: 48 pasos × 900s = **12 horas** de horizonte de optimización.
-- **`milp_horizon=1`**: Solo el primer paso es binario (el resto se relaja a [0,1]).
-- **`mip_gap=0.01`**: El solver se detiene al alcanzar un gap de optimalidad del 1%.
 
----
+- **`Hu=48`**: 48 steps × 900s = **12 hours** optimization horizon.
+- **`milp_horizon=1`**: Only the first step is binary (the rest is relaxed to ). [deepl](https://www.deepl.com/en/translator/q/en/markdown/es/rebaja/71e26c33)
+- **`mip_gap=0.01`**: The solver stops when it reaches a 1% optimality gap.
 
-## 4. Base de Datos (`db/init.sql`)
 
-### 4.1 Tablas Principales
+***
 
-#### `measurements` — Mediciones de sensores del BMS
 
-| Columna | Tipo | Descripción |
+## 4. Database (`db/init.sql`)
+
+
+### 4.1 Main Tables
+
+
+#### `measurements` — BMS sensor measurements
+
+
+| Column | Type | Description |
 |---------|------|-------------|
-| `id` | INTEGER PK | Identificador |
-| `timestamp` | TEXT | Marca temporal |
-| `room_id` | INTEGER | ID de la cámara (1-5) |
-| `T_air` | REAL | Temperatura del aire [°C] |
-| `T_product` | REAL | Temperatura del producto [°C] |
+| `id` | INTEGER PK | Identifier |
+| `timestamp` | TEXT | Timestamp |
+| `room_id` | INTEGER | Cold room ID (1-5) |
+| `T_air` | REAL | Air temperature [°C] |
+| `T_product` | REAL | Product temperature [°C] |
 
-#### `disturbance_forecasts` — Previsiones de perturbaciones
 
-| Columna | Tipo | Descripción |
+#### `disturbance_forecasts` — Disturbance forecasts
+
+
+| Column | Type | Description |
 |---------|------|-------------|
-| `id` | INTEGER PK | Identificador |
-| `timestamp` | TEXT | Marca temporal |
-| `room_id` | INTEGER | ID de la cámara (1-5) |
-| `T_ambient` | REAL | Temperatura ambiente [°C] |
-| `door_load` | REAL | Carga térmica de puerta [W] |
+| `id` | INTEGER PK | Identifier |
+| `timestamp` | TEXT | Timestamp |
+| `room_id` | INTEGER | Cold room ID (1-5) |
+| `T_ambient` | REAL | Ambient temperature [°C] |
+| `door_load` | REAL | Door thermal load [W] |
 
-#### `setpoints` — Puntos de consigna del controlador
 
-| Columna | Tipo | Descripción |
+#### `setpoints` — Controller setpoints
+
+
+| Column | Type | Description |
 |---------|------|-------------|
-| `id` | INTEGER PK | Identificador |
-| `timestamp` | TEXT | Marca temporal |
-| `room_id` | INTEGER | ID de la cámara (1-5) |
-| `u` | REAL | Potencia de refrigeración [W] |
-| `p3` | REAL | Potencia del congelador [W] |
+| `id` | INTEGER PK | Identifier |
+| `timestamp` | TEXT | Timestamp |
+| `room_id` | INTEGER | Cold room ID (1-5) |
+| `u` | REAL | Cooling power [W] |
+| `p3` | REAL | Freezer power [W] |
 
-#### Tablas adicionales de mercado
 
-| Tabla | Propósito |
+#### Additional market tables
+
+
+| Table | Purpose |
 |-------|-----------|
-| `assets` | Activos energéticos (con ubicación y tipo) |
-| `price_tag` | Etiquetas de precio por país y tipo de mercado |
-| `price` | Precios de electricidad [EUR/kWh] por timestamp |
-| `weather` | Variables meteorológicas por activo |
-| `forecasts` | Previsiones genéricas con intervalos de confianza (`yhat`, `yhat_lower`, `yhat_upper`) |
+| `assets` | Energy assets (with location and type) |
+| `price_tag` | Price tags by country and market type |
+| `price` | Electricity prices [EUR/kWh] by timestamp |
+| `weather` | Weather variables by asset |
+| `forecasts` | Generic forecasts with confidence intervals (`yhat`, `yhat_lower`, `yhat_upper`) |
 
-### 4.2 Datos Iniciales (Semilla)
 
-Se pre-cargan 5 cámaras frigoríficas:
+### 4.2 Initial Data (Seed)
 
-| Cámara | T_air (°C) | T_product (°C) | Uso |
+
+Five cold rooms are preloaded:
+
+
+| Room | T_air (°C) | T_product (°C) | Use |
 |--------|------------|-----------------|-----|
-| 1 | 4.5 | 4.8 | Lácteos |
-| 2 | 2.1 | 2.3 | Productos terminados |
-| 3 | 3.8 | 4.0 | Carne |
-| 4 | 5.2 | 5.5 | Verduras |
-| 5 | -18.3 | -18.0 | Congelador |
+| 1 | 4.5 | 4.8 | Dairy |
+| 2 | 2.1 | 2.3 | Finished products |
+| 3 | 3.8 | 4.0 | Meat |
+| 4 | 5.2 | 5.5 | Vegetables |
+| 5 | -18.3 | -18.0 | Freezer |
 
----
 
-## 5. FlexOPTi — Controlador de Flexibilidad (Julia)
+***
 
-### 5.1 Estructura del Módulo
+
+## 5. FlexOPTi — Flexibility Controller (Julia)
+
+
+### 5.1 Module Structure
+
 
 ```
 FlexOPTi/
-├── Project.toml              # Dependencias Julia
+├── Project.toml              # Julia dependencies
 ├── Manifest.toml
-├── settings.json             # Configuración operativa
+├── settings.json             # Operational configuration
 ├── Dockerfile
 ├── src/
-│   ├── FlexOPTi.jl           # Módulo principal
-│   ├── logging.jl            # Configuración de logs
+│   ├── FlexOPTi.jl           # Main module
+│   ├── logging.jl            # Log configuration
 │   ├── print/
-│   │   └── print_output.jl   # Formateo de salida
+│   │   └── print_output.jl   # Output formatting
 │   ├── core/
-│   │   ├── types.jl           # Definiciones de tipos
-│   │   ├── parse_digital_twin.jl  # Parser del JSON del DT
-│   │   ├── parse_sensors.jl       # Condiciones iniciales
-│   │   ├── parse_forecasts.jl     # Previsiones de perturbaciones
-│   │   ├── fetch_prices.jl        # Precios del Trading Manager
-│   │   ├── build_constraints.jl   # Restricciones del MPC
-│   │   ├── mpc_update.jl          # Optimización MPC
-│   │   ├── mpc_helper.jl          # Funciones auxiliares
-│   │   ├── fm_optimize.jl         # API principal: optimize()
-│   │   ├── utils.jl               # Utilidades
-│   │   └── parse_output.jl        # Parseo de resultados
+│   │   ├── types.jl           # Type definitions
+│   │   ├── parse_digital_twin.jl  # DT JSON parser
+│   │   ├── parse_sensors.jl       # Initial conditions
+│   │   ├── parse_forecasts.jl     # Disturbance forecasts
+│   │   ├── fetch_prices.jl        # Trading Manager prices
+│   │   ├── build_constraints.jl   # MPC constraints
+│   │   ├── mpc_update.jl          # MPC optimization
+│   │   ├── mpc_helper.jl          # Helper functions
+│   │   ├── fm_optimize.jl         # Main API: optimize()
+│   │   ├── utils.jl               # Utilities
+│   │   └── parse_output.jl        # Result parsing
 │   └── pilots/
-│       ├── ewh/                   # Implementación piloto EWH
+│       ├── ewh/                   # EWH pilot implementation
 │       │   ├── Ewh.jl
 │       │   ├── parse_digital_twin.jl
 │       │   ├── parse_forecasts.jl
@@ -200,92 +238,108 @@ FlexOPTi/
 │       │   ├── batch_mpc.jl
 │       │   ├── mpc_types.jl
 │       │   └── mpc_main.jl
-│       └── montcada/              # Implementación piloto Montcada
+│       └── montcada/              # Montcada pilot implementation
 │           └── Montcada.jl
 ├── scripts/
 │   └── ewh/
-│       ├── dr_controller.jl       # Bucle MPC principal (producción)
-│       ├── sim_demo.jl            # Simulación en bucle cerrado
-│       ├── sim_plot.jl            # Gráficos de simulación
-│       ├── mpc_base.jl            # Demo MPC standalone
-│       ├── dt.jl                  # Utilidades del DT
-│       ├── ewh.jl                 # Utilidades EWH
-│       └── mpc_plot.jl            # Utilidades de gráficos
+│       ├── dr_controller.jl       # Main MPC loop (production)
+│       ├── sim_demo.jl            # Closed-loop simulation
+│       ├── sim_plot.jl            # Simulation plots
+│       ├── mpc_base.jl            # Standalone MPC demo
+│       ├── dt.jl                  # DT utilities
+│       ├── ewh.jl                 # EWH utilities
+│       └── mpc_plot.jl            # Plot utilities
 ├── data/
-│   ├── EWH/inputs/                # Datos de entrada
-│   └── cache/                     # Caché de precios
+│   ├── EWH/inputs/                # Input data
+│   └── cache/                     # Price cache
 └── test/                          # Tests
 ```
 
-### 5.2 Dependencias Principales
 
-| Paquete | Uso |
+### 5.2 Main Dependencies
+
+
+| Package | Use |
 |---------|-----|
-| `JuMP` | Modelado de optimización matemática |
-| `HiGHS` | Solver MILP (Mixed-Integer Linear Programming) |
-| `HTTP` | Cliente HTTP (consultas al Trading Manager) |
-| `JSON3` | Parseo de JSON |
-| `SQLite` | Acceso a base de datos |
-| `TimeZones` | Manejo de zonas horarias |
-| `JLD2` | Serialización binaria de datos JuMP |
-| `LoggingExtras` | Logging avanzado |
+| `JuMP` | Mathematical optimization modeling |
+| `HiGHS` | MILP solver (Mixed-Integer Linear Programming) |
+| `HTTP` | HTTP client (queries to the Trading Manager) |
+| `JSON3` | JSON parsing |
+| `SQLite` | Database access |
+| `TimeZones` | Time zone handling |
+| `JLD2` | Binary serialization of JuMP data |
+| `LoggingExtras` | Advanced logging |
 
-### 5.3 Sistema de Tipos (Multiple Dispatch)
+
+### 5.3 Type System (Multiple Dispatch)
+
 
 ```julia
 abstract type AbstractBuilding end
 abstract type AbstractHeatBuilding <: AbstractBuilding end
 abstract type AbstractElecBuilding <: AbstractBuilding end
 
+
 struct Montcada <: AbstractElecBuilding end
 struct Ewh      <: AbstractElecBuilding end
 struct Karno    <: AbstractHeatBuilding end
 ```
 
-El piloto se pasa como string en el API (`"Ewh"`, `"Montcada"`) y se resuelve una vez a un tipo Julia. A partir de ahí, el **multiple dispatch** de Julia gestiona automáticamente la lógica específica de cada piloto sin usar comparaciones de strings.
 
-### 5.4 Estructuras de Datos Clave
+The pilot is passed as a string in the API (`"Ewh"`, `"Montcada"`) and resolved once into a Julia type. From that point on, Julia’s **multiple dispatch** automatically handles the pilot-specific logic without using string comparisons.
 
-#### `O` — Opciones de configuración (mutable)
 
-| Campo | Tipo | Descripción |
+### 5.4 Key Data Structures
+
+
+#### `O` — Configuration options (mutable)
+
+
+| Field | Type | Description |
 |-------|------|-------------|
-| `Hu` | Int | Horizonte de control [pasos] |
-| `Δt` | Float64 | Paso temporal [segundos] |
-| `pilot` | AbstractBuilding | Tipo de piloto resuelto |
-| `solver` | String | `"HiGHS"` o `"Gurobi"` |
-| `mip_gap` | Float64 | Gap relativo MIP |
-| `warm_start` | Bool | Reusar solución anterior |
-| `milp_horizon` | Int | Pasos con variables binarias |
-| `market_country` | String | País para precios |
-| `tm_base_url` | String | URL del Trading Manager |
+| `Hu` | Int | Control horizon [steps] |
+| `Δt` | Float64 | Time step [seconds] |
+| `pilot` | AbstractBuilding | Resolved pilot type |
+| `solver` | String | `"HiGHS"` or `"Gurobi"` |
+| `mip_gap` | Float64 | Relative MIP gap |
+| `warm_start` | Bool | Reuse previous solution |
+| `milp_horizon` | Int | Steps with binary variables |
+| `market_country` | String | Country for prices |
+| `tm_base_url` | String | Trading Manager URL |
 
-#### `OX` — Datos de entrada del MPC
 
-| Campo | Tipo | Descripción |
+#### `OX` — MPC input data
+
+
+| Field | Type | Description |
 |-------|------|-------------|
-| `digital_twin` | Dict | Estructura del modelo + dinámica |
-| `sensors` | Vector{Dict} | Condiciones iniciales (mediciones) |
-| `forecast` | Dict | Predicciones de perturbaciones |
-| `constraints` | Dict | Restricciones del sistema |
-| `dynamics` | BatchDynamics | Espacio de estados discretizado |
-| `prices` | Vector{Float64} | Precios day-ahead [EUR/Wh] |
+| `digital_twin` | Dict | Model structure + dynamics |
+| `sensors` | Vector{Dict} | Initial conditions (measurements) |
+| `forecast` | Dict | Disturbance predictions |
+| `constraints` | Dict | System constraints |
+| `dynamics` | BatchDynamics | Discretized state-space |
+| `prices` | Vector{Float64} | Day-ahead prices [EUR/Wh] |
 
-#### `BatchDynamics` — Formulación batch del MPC
+
+#### `BatchDynamics` — Batch MPC formulation
+
 
 ```
 X = M·ξ₁ + Ξ·U + Ψ·Δ
 ```
 
-| Campo | Descripción |
-|-------|-------------|
-| `M` | Matriz de mapeo de estados |
-| `Ξ` | Matriz de mapeo de control |
-| `Ψ` | Matriz de mapeo de perturbaciones |
-| `ξ₁` | Vector de condiciones iniciales |
-| `Δ` | Vector de perturbaciones apilado |
 
-### 5.5 Función Principal: `optimize()`
+| Field | Description |
+|-------|-------------|
+| `M` | State mapping matrix |
+| `Ξ` | Control mapping matrix |
+| `Ψ` | Disturbance mapping matrix |
+| `ξ₁` | Initial condition vector |
+| `Δ` | Stacked disturbance vector |
+
+
+### 5.5 Main Function: `optimize()`
+
 
 ```julia
 function optimize(
@@ -299,239 +353,299 @@ function optimize(
 )::Dict{Symbol, Any}
 ```
 
-**Flujo de ejecución:**
 
-1. Carga configuración desde `settings.json`
-2. Sobrescribe valores con los argumentos recibidos
-3. Parsea JSON del Digital Twin (estructura del modelo + dinámica identificada)
-4. Parsea JSON de sensores (mediciones actuales → condiciones iniciales `x₀`)
-5. Parsea JSON de previsiones (temperatura ambiente, aperturas de puerta para `Hu` pasos)
-6. Obtiene precios day-ahead del Trading Manager (o usa caché)
-7. Construye dinámica batch mediante discretización (Zero-Order Hold a `Δt`)
-8. Despacha a `mpc_update()` específico del piloto vía multiple dispatch
-9. Retorna diccionario con: valor del objetivo [EUR], setpoints óptimos `u[1..Hu]`, estados predichos `x[1..Hu]`, estado del solver, metadatos computacionales
+**Execution flow:**
 
-### 5.6 Obtención de Precios (`fetch_prices.jl`)
 
-El sistema consulta precios de electricidad del Trading Manager con un mecanismo de fallback en cascada:
+1. Loads configuration from `settings.json`
+2. Overrides values with the received arguments
+3. Parses the Digital Twin JSON (model structure + identified dynamics)
+4. Parses sensor JSON (current measurements → initial conditions `x₀`)
+5. Parses forecast JSON (ambient temperature, door openings for `Hu` steps)
+6. Gets day-ahead prices from the Trading Manager (or uses cache)
+7. Builds batch dynamics by discretization (Zero-Order Hold at `Δt`)
+8. Dispatches to pilot-specific `mpc_update()` via multiple dispatch
+9. Returns a dictionary with: objective value [EUR], optimal setpoints `u[1..Hu]`, predicted states `x[1..Hu]`, solver status, computational metadata
 
-| Nivel de calidad | Fuente | Descripción |
+
+### 5.6 Price Retrieval (`fetch_prices.jl`)
+
+
+The system queries electricity prices from the Trading Manager with a cascading fallback mechanism:
+
+
+| Quality level | Source | Description |
 |------------------|--------|-------------|
-| `:live` | Trading Manager | Precios frescos obtenidos en tiempo real |
-| `:cached` | Archivo local | TM inalcanzable; se usa caché en disco |
-| `:fallback` | Caché anterior | Se usan precios del día anterior |
-| `:unavailable` | Ceros | Sin datos; optimización no fiable |
+| `:live` | Trading Manager | Fresh prices obtained in real time |
+| `:cached` | Local file | TM unreachable; on-disk cache is used |
+| `:fallback` | Previous cache | Previous day’s prices are used |
+| `:unavailable` | Zeros | No data; optimization is unreliable |
 
-**Funciones clave:**
 
-- `_get_market_id(tm_base, country)` — Busca ID de mercado por país
-- `_query_tm_prices(tm_base, market_id)` — Consulta precios vía REST
-- `_snap_to_slot(dt)` — Cuantiza a slot de 15 minutos
-- `_align_prices(prices_dict, t0, Hu, Δt)` — Construye vector de precios del horizonte
-- Caché local en `FlexOPTi/data/cache/prices_<country>.json` (máximo 36 horas)
+**Key functions:**
 
-### 5.7 Piloto EWH — Cámaras Frigoríficas
 
-**Descripción del sistema físico:**
+- `_get_market_id(tm_base, country)` — Finds market ID by country
+- `_query_tm_prices(tm_base, market_id)` — Queries prices via REST
+- `_snap_to_slot(dt)` — Quantizes to a 15-minute slot
+- `_align_prices(prices_dict, t0, Hu, Δt)` — Builds the horizon price vector
+- Local cache in `FlexOPTi/data/cache/prices_<country>.json` (maximum 36 hours)
 
-- **5 cámaras:** lácteos, productos terminados, carne, verduras, congelador
-- **2 compresores:** P1 (modulado, cámaras 1-4), P2 (on/off, apoyo)
-- **1 compresor de congelador:** P3 (on/off, cámara 5)
-- **Vector de estados:** 10 estados (T_air, T_product por cámara)
-- **Vector de control:** `u ∈ [0, P1_max]` para cámaras 1-4; `u[5] ∈ {0, P3_max}` para congelador
-- **Restricciones:** límites de setpoint (±ΔT del nominal), límites de potencia, tasas de rampa
 
-### 5.8 Bucle Principal de Producción (`dr_controller.jl`)
+### 5.7 EWH Pilot — Cold Rooms
+
+
+**Description of the physical system:**
+
+
+- **5 rooms:** dairy, finished products, meat, vegetables, freezer
+- **2 compressors:** P1 (modulated, rooms 1-4), P2 (on/off, support)
+- **1 freezer compressor:** P3 (on/off, room 5)
+- **State vector:** 10 states (T_air, T_product per room)
+- **Control vector:** `u ∈ [0, P1_max]` for rooms 1-4; `u [codecademy](https://www.codecademy.com/resources/docs/markdown/code-blocks) ∈ {0, P3_max}` for the freezer
+- **Constraints:** setpoint limits (±ΔT from nominal), power limits, ramp rates
+
+
+### 5.8 Main Production Loop (`dr_controller.jl`)
+
 
 ```
-INICIO
+START
   │
-  ├── Arrancar servidor HTTP de estado (:8080)
-  ├── Conectar a BD SQLite
-  ├── Verificar existencia del archivo del DT
+  ├── Start HTTP status server (:8080)
+  ├── Connect to SQLite DB
+  ├── Verify existence of the DT file
   │
-  └── BUCLE MPC (cada Δt_s segundos):
+  └── MPC LOOP (every Δt_s seconds):
         │
-        ├── 1. Leer sensores de BD → x₀
-        ├── 2. Leer previsiones de BD → perturbaciones
-        ├── 3. Obtener precios del Trading Manager (o caché)
-        ├── 4. Llamar FlexOPTi.optimize(dt_file, sensors, forecasts, ...)
-        ├── 5. Extraer u_first [1..N_ROOMS] del resultado
-        ├── 6. Escribir setpoints en BD
-        ├── 7. Comprobar temporizador de re-entrenamiento del DT
-        │     └── Si toca: lanzar Rscript en subproceso
-        └── 8. Actualizar estado del servidor HTTP
+        ├── 1. Read sensors from DB → x₀
+        ├── 2. Read forecasts from DB → disturbances
+        ├── 3. Get prices from the Trading Manager (or cache)
+        ├── 4. Call FlexOPTi.optimize(dt_file, sensors, forecasts, ...)
+        ├── 5. Extract u_first [1..N_ROOMS] from the result
+        ├── 6. Write setpoints to DB
+        ├── 7. Check DT retraining timer
+        │      └── If due: launch Rscript in subprocess
+        └── 8. Update HTTP server status
 ```
 
-**Funciones de BD:**
 
-| Función | Descripción |
+**DB functions:**
+
+
+| Function | Description |
 |---------|-------------|
-| `db_read_sensors(db, tmp_dir)` | SELECT último timestamp → vector `x₀` intercalado `[T_air_1, T_prod_1, ...]` |
-| `db_read_forecasts(db, tmp_dir)` | SELECT `timestamp >= NOW()` → próximos `Hu` pasos de T_ambient y door_openings |
-| `db_write_setpoints(db, u, t)` | INSERT setpoints por cámara; cámaras 1-4 usan `u`, cámara 5 usa `p3` |
-| `dt_trigger_retrain()` | Lanza `Rscript` en background; copia output al volumen compartido |
+| `db_read_sensors(db, tmp_dir)` | SELECT latest timestamp → interleaved `x₀` vector `[T_air_1, T_prod_1, ...]` |
+| `db_read_forecasts(db, tmp_dir)` | SELECT `timestamp >= NOW()` → next `Hu` steps of T_ambient and door openings |
+| `db_write_setpoints(db, u, t)` | INSERT setpoints by room; rooms 1-4 use `u`, room 5 uses `p3` |
+| `dt_trigger_retrain()` | Launches `Rscript` in background; copies output to the shared volume |
 
----
+
+***
+
 
 ## 6. Digital Twin (`dt/`)
 
-### 6.1 EWH_coldrooms_CSTM — Estimación de Parámetros (R/ctsmTMB)
 
-**Tecnología:** R 4.4.2 con librería `ctsmTMB` (Continuous-Time Stochastic Modelling using TMB).
+### 6.1 EWH_coldrooms_CSTM — Parameter Estimation (R/ctsmTMB)
 
-**Modelo físico (por cámara):**
+
+**Technology:** R 4.4.2 with the `ctsmTMB` library (Continuous-Time Stochastic Modelling using TMB).
+
+
+**Physical model (per room):**
+
 
 $$\frac{dT_{a,i}}{dt} = k_{1,i}(T_{amb} - T_{a,i}) + k_{2,i}(T_{p,i} - T_{a,i}) - k_3 \cdot u_i + k_{4,i} \cdot d_i \cdot 1000 + \sigma_a \cdot w_i$$
 
+
 $$\frac{dT_{p,i}}{dt} = k_{5,i}(T_{a,i} - T_{p,i}) + \sigma_p \cdot w_{p,i}$$
 
-Donde:
 
-| Parámetro | Significado |
+Where:
+
+
+| Parameter | Meaning |
 |-----------|-------------|
-| $k_{1,i} = UA_i / C_{a,i}$ | Tasa de pérdida de calor por pared |
-| $k_{2,i} = UA_{ap,i} / C_{a,i}$ | Tasa de acoplamiento aire-producto |
-| $k_3 = COP / C_a$ | Eficiencia de refrigeración |
-| $k_{4,i} = Q_{door} / (1000 \cdot C_a)$ | Efecto de carga de puerta |
-| $k_{5,i} = UA_{ap,i} / C_{p,i}$ | Recuperación de calor del producto |
-| $\sigma_a, \sigma_p$ | Ruido de proceso (estocástico) |
-| $w_i, w_{p,i}$ | Procesos de Wiener (movimiento browniano) |
+| \(k_{1,i} = UA_i / C_{a,i}\) | Wall heat loss rate |
+| \(k_{2,i} = UA_{ap,i} / C_{a,i}\) | Air-product coupling rate |
+| \(k_3 = COP / C_a\) | Cooling efficiency |
+| \(k_{4,i} = Q_{door} / (1000 \cdot C_a)\) | Door load effect |
+| \(k_{5,i} = UA_{ap,i} / C_{p,i}\) | Product heat recovery |
+| \(\sigma_a, \sigma_p\) | Process noise (stochastic) |
+| \(w_i, w_{p,i}\) | Wiener processes (Brownian motion) |
 
-**Datos de entrenamiento:** `simulation_data_8day_noise_real_door_opening.csv` (8 días de simulación con ruido y aperturas de puerta reales).
 
-**Proceso:**
+**Training data:** `simulation_data_8day_noise_real_door_opening.csv` (8 days of simulation with noise and real door openings).
 
-1. **Preparación de datos:** Mapear observaciones (temperaturas), inputs (potencias de refrigeración) y perturbaciones (aperturas de puerta).
-2. **Split train/test:** Primeras 164 horas para entrenamiento, resto para test.
-3. **Definición del modelo ctsmTMB:** Ecuaciones diferenciales estocásticas para las 5 cámaras.
-4. **Estimación:** Máxima verosimilitud de los parámetros.
-5. **Salida:** JSON con matrices de espacio de estados continuo y discretizado.
 
-**Salida JSON (`cold_room_model_continuous.json`):**
+**Process:**
+
+
+1. **Data preparation:** Map observations (temperatures), inputs (cooling powers), and disturbances (door openings).
+2. **Train/test split:** First 164 hours for training, the rest for test.
+3. **ctsmTMB model definition:** Stochastic differential equations for the 5 rooms.
+4. **Estimation:** Maximum likelihood estimation of parameters.
+5. **Output:** JSON with continuous and discretized state-space matrices.
+
+
+**Output JSON (`cold_room_model_continuous.json`):**
+
 
 ```json
 {
   "state_space": {
-    "A": [...],       // Matriz A continua
-    "B": [...],       // Matriz B (input de control)
-    "E": [...],       // Matriz E (perturbaciones)
-    "x0": [...]       // Condiciones iniciales
+    "A": [...],       // Continuous A matrix
+    "B": [...],       // B matrix (control input)
+    "E": [...],       // E matrix (disturbances)
+    "x0": [...]       // Initial conditions
   },
   "discretization": {
-    "delta_t": 900.0, // Tiempo de muestreo [s]
-    "Ad": [...],      // A discretizada
-    "Bd": [...],      // B discretizada
-    "Ed": [...]       // E discretizada
+    "delta_t": 900.0, // Sampling time [s]
+    "Ad": [...],      // Discretized A
+    "Bd": [...],      // Discretized B
+    "Ed": [...]       // Discretized E
   },
   "parameters": {
-    "k1": [...],      // Tasas de pérdida de calor [W/K]
-    "k2": [...],      // Tasas de acoplamiento aire-producto
+    "k1": [...],      // Heat loss rates [W/K]
+    "k2": [...],      // Air-product coupling rates
     "k3": 2.5,        // COP
-    "k4": [...],      // Tasas de carga de puerta
-    "k5": [...]       // Tasas de recuperación de calor
+    "k4": [...],      // Door load rates
+    "k5": [...]       // Heat recovery rates
   }
 }
 ```
 
-### 6.2 EWH_coldrooms — Simulación Python
 
-Simulador del sistema físico de las 5 cámaras frigoríficas usado para generar datos de entrenamiento del Digital Twin.
+### 6.2 EWH_coldrooms — Python Simulation
 
-**Modelo de espacio de estados discreto:**
+
+Simulator of the physical system of the 5 cold rooms used to generate training data for the Digital Twin.
+
+
+**Discrete state-space model:**
+
 
 $$x[k+1] = A_d \cdot x[k] + B_d \cdot u[k] + E_d \cdot d[k]$$
 
-Donde:
-- $x = [T_1, T_2, T_3, T_4, T_5]$ — temperaturas de las cámaras
-- $u = [u_1, u_2, u_3, u_4, u_5]$ — potencias de refrigeración
-- $d = [T_{amb,1}, Q_{door,1}, T_{amb,2}, Q_{door,2}, ...]$ — perturbaciones
 
-**Discretización exacta** vía exponencial de matriz:
+Where:
+- \(x = [T_1, T_2, T_3, T_4, T_5]\) — room temperatures
+- \(u = [u_1, u_2, u_3, u_4, u_5]\) — cooling powers
+- \(d = [T_{amb,1}, Q_{door,1}, T_{amb,2}, Q_{door,2}, ...]\) — disturbances
+
+
+**Exact discretization** via matrix exponential:
+
 
 $$M_d = e^{M \cdot \Delta t}, \quad M = \begin{bmatrix} A & B & E \\ 0 & 0 & 0 \\ 0 & 0 & 0 \end{bmatrix}$$
 
-**Parámetros físicos:**
 
-| Parámetro | Valor | Descripción |
+**Physical parameters:**
+
+
+| Parameter | Value | Description |
 |-----------|-------|-------------|
-| `m` | [1200, 1000, 1500, 1100, 800] kg | Masas térmicas |
-| `cv` | [1000, 1000, 1000, 1000, 900] J/kg·K | Calores específicos |
-| `UA` | [40, 35, 50, 45, 38] W/K | Conductancias de pared |
-| `COP` | 2.5 | Coeficiente de rendimiento |
-| `P1_max` | 2000 W | Compresor primario |
-| `P2_max` | 500 W | Compresor secundario |
-| `P3_max` | 2000 W | Compresor del congelador |
+| `m` |  kg | Thermal masses |
+| `cv` |  J/kg·K | Specific heats |
+| `UA` |  W/K | Wall conductances |
+| `COP` | 2.5 | Coefficient of performance |
+| `P1_max` | 2000 W | Primary compressor |
+| `P2_max` | 500 W | Secondary compressor |
+| `P3_max` | 2000 W | Freezer compressor |
 
-**Lógica de control simulada:**
 
-- **Cámaras 1-4:** Control proporcional con asignación de potencia. Si la demanda supera `P1_max`, se activa P2 y se reparte proporcionalmente.
-- **Congelador:** Control por histéresis con banda de ±0.5°C.
-- **Perturbaciones:** Aperturas de puerta modeladas como llegadas de Poisson.
+**Simulated control logic:**
 
-### 6.3 EWH_EV_charging_BC7 — Carga de Vehículos Eléctricos (RL)
 
-Agente de **Deep Q-Network (DQN)** para programación óptima de carga de vehículos eléctricos.
+- **Rooms 1-4:** Proportional control with power allocation. If demand exceeds `P1_max`, P2 is activated and allocated proportionally.
+- **Freezer:** Hysteresis control with a ±0.5°C band.
+- **Disturbances:** Door openings modeled as Poisson arrivals.
 
-| Componente | Detalle |
+
+### 6.3 EWH_EV_charging_BC7 — Electric Vehicle Charging (RL)
+
+
+**Deep Q-Network (DQN)** agent for optimal scheduling of electric vehicle charging.
+
+
+| Component | Detail |
 |------------|---------|
-| **Tecnología** | PyTorch 2.7.0 |
-| **Agente** | `DQNAgent` |
-| **Entorno** | `EVChargingEnv` |
-| **Recompensa** | $-\text{PENALTY\_PER\_KWH} \times E_{charged} - \text{FIXED\_PENALTY}$ si infactible |
-| **Acción** | Tasa de carga $[0, P_{max}]$ con $P_{max} = 11$ kW |
-| **Episodios** | 50 |
-| **Split datos** | 70% train, 30% test (por estación, cronológico) |
+| **Technology** | PyTorch 2.7.0 |
+| **Agent** | `DQNAgent` |
+| **Environment** | `EVChargingEnv` |
+| **Reward** | \(-\text{PENALTY\_PER\_KWH} \times E_{charged} - \text{FIXED\_PENALTY}\) if infeasible |
+| **Action** | Charging rate \([0, P_{max}]\) with \(P_{max} = 11\) kW |
+| **Episodes** | 50 |
+| **Data split** | 70% train, 30% test (by station, chronological) |
 
-### 6.4 BlueBird-multizone-modelling — Edificio Montcada
 
-Modelos de dinámica térmica para el piloto Montcada (edificio HVAC multizona):
+### 6.4 BlueBird-multizone-modelling — Montcada Building
 
-- `DT_dynamics_estimator.R` — Estimador de dinámica
-- `DT_training.R` — Entrenamiento del modelo
-- `DT_predict.R` — Predicción
-- `HourlyCalendarEnergyModel.R` — Modelo energético por calendario
-- `HourlyHVACEnergyModel.R` — Modelo energético HVAC
-- `HourlyTemperatureModel.R` — Modelo de temperatura
 
-### 6.5 Enlion — Obras Hidráulicas
+Thermal dynamics models for the Montcada pilot (multi-zone HVAC building):
 
-Modelo de **regresión lineal con lag-24** para dinámica de tanques de almacenamiento de agua:
+
+- `DT_dynamics_estimator.R` — Dynamics estimator
+- `DT_training.R` — Model training
+- `DT_predict.R` — Prediction
+- `HourlyCalendarEnergyModel.R` — Calendar-based energy model
+- `HourlyHVACEnergyModel.R` — HVAC energy model
+- `HourlyTemperatureModel.R` — Temperature model
+
+
+### 6.5 Enlion — Water Works
+
+
+**Linear regression with lag-24** model for water storage tank dynamics:
+
 
 $$\text{tank\_level}(t) = \sum_i w_i \cdot \text{feature}(t - \text{lag}_i) + \text{intercept}$$
 
-**Proceso:**
-1. Generación de datos sintéticos (`waterworks-simulated-data-generator.py`)
-2. Entrenamiento del modelo (`prediction_linear_regression.py`)
-3. Exportación de pesos a CSV (`linear_reg_lag24_weights.csv`)
 
----
+**Process:**
+1. Synthetic data generation (`waterworks-simulated-data-generator.py`)
+2. Model training (`prediction_linear_regression.py`)
+3. Export of weights to CSV (`linear_reg_lag24_weights.csv`)
 
-## 7. Sistema de Previsiones (`forecasting/`)
+
+***
+
+
+## 7. Forecasting System (`forecasting/`)
+
 
 ### 7.1 Dummy Forecast Service
 
-Servicio de previsiones sintéticas para desarrollo y pruebas.
 
-**Comportamiento:**
+Synthetic forecast service for development and testing.
 
-- Inicializa el esquema de BD al arrancar (CREATE TABLE si no existe + datos semilla).
-- Cada 15 minutos (configurable vía `CADENCE_S`), escribe 48 pasos de previsión (12h) en la tabla `disturbance_forecasts`.
-- Todas las previsiones usan temperatura ambiente constante (18°C) y carga de puerta 0.
-- Expone endpoint `/health` en puerto 5000.
 
-### 7.2 API de Previsiones (NeuralForecast / Chronos)
+**Behavior:**
 
-API REST basada en **FastAPI** para inferencia de modelos de series temporales.
 
-| Componente | Tecnología |
+- Initializes the DB schema at startup (CREATE TABLE if it does not exist + seed data).
+- Every 15 minutes (configurable via `CADENCE_S`), writes 48 forecast steps (12h) to the `disturbance_forecasts` table.
+- All forecasts use constant ambient temperature (18°C) and door load 0.
+- Exposes `/health` endpoint on port 5000.
+
+
+### 7.2 Forecasting API (NeuralForecast / Chronos)
+
+
+REST API based on **FastAPI** for time series model inference.
+
+
+| Component | Technology |
 |------------|------------|
 | Framework | FastAPI |
-| Modelos | NeuralForecast 2.0.1, Amazon Chronos |
+| Models | NeuralForecast 2.0.1, Amazon Chronos |
 | ML Framework | PyTorch 2.2.0 (CPU) |
-| Tracking | CodeCarbon (emisiones de CO₂) |
+| Tracking | CodeCarbon (CO₂ emissions) |
 
-**Endpoint principal:**
+
+**Main endpoint:**
+
 
 ```
 POST /predict/
@@ -539,117 +653,150 @@ Body: { ds: [timestamps], unique_id: [ids], y: [values] }
 Response: { yhat: [...], yhat_lower: [...], yhat_upper: [...], ds: [...], unique_id: [...] }
 ```
 
-### 7.3 Aplicación Streamlit
 
-Dashboard web para visualización de datos y ejecución de inferencia:
+### 7.3 Streamlit Application
 
-- **Página "View Data":** Visualización de datos históricos
-- **Página "Inference":** Ejecución de predicciones en tiempo real
+
+Web dashboard for data visualization and inference execution:
+
+
+- **"View Data" page:** Historical data visualization
+- **"Inference" page:** Real-time prediction execution
+
 
 ### 7.4 Prefect Pipelines
 
-Pipelines de datos programados (Prefect 3.4.15) para:
 
-- Entrenamiento de modelos en cadencia
-- Ejecución de inferencia programada
-- Generación de datos sintéticos
+Scheduled data pipelines (Prefect 3.4.15) for:
+
+
+- Periodic model training
+- Scheduled inference execution
+- Synthetic data generation
+
 
 ### 7.5 FAST Framework
 
-Framework modular de previsiones organizado en 4 fases:
 
-| Fase | Nombre | Propósito |
+Modular forecasting framework organized into 4 phases:
+
+
+| Phase | Name | Purpose |
 |------|--------|-----------|
-| 1 | **Forge** | Preparación de datos |
-| 2 | **Augur** | Entrenamiento de modelos |
-| 3 | **Surveil** | Monitorización y detección de anomalías |
-| 4 | **Translate** | Transformación de salida |
+| 1 | **Forge** | Data preparation |
+| 2 | **Augur** | Model training |
+| 3 | **Surveil** | Monitoring and anomaly detection |
+| 4 | **Translate** | Output transformation |
 
----
 
-## 8. Control Room — Dashboard de Operador
+***
 
-### 8.1 Endpoints REST
 
-| Método | Ruta | Descripción |
+## 8. Control Room — Operator Dashboard
+
+
+### 8.1 REST Endpoints
+
+
+| Method | Route | Description |
 |--------|------|-------------|
-| GET | `/` | Dashboard HTML con auto-refresco cada 15s |
-| GET | `/health` | Health check del servicio |
-| GET | `/status` | Estado del FC + últimos setpoints |
-| GET | `/services` | Ping de salud de todos los servicios |
-| GET | `/metrics` | KPIs (contadores de setpoints, previsiones, mediciones) |
-| GET | `/setpoints` | Últimos N setpoints de la BD (JSON) |
-| GET | `/forecasts` | Últimas N previsiones de la BD |
-| POST | `/clear` | Limpiar tablas de la BD (con confirmación) |
+| GET | `/` | HTML dashboard with auto-refresh every 15s |
+| GET | `/health` | Service health check |
+| GET | `/status` | FC status + latest setpoints |
+| GET | `/services` | Health ping of all services |
+| GET | `/metrics` | KPIs (setpoint, forecast, measurement counters) |
+| GET | `/setpoints` | Latest N setpoints from DB (JSON) |
+| GET | `/forecasts` | Latest N forecasts from DB |
+| POST | `/clear` | Clear DB tables (with confirmation) |
 
-### 8.2 Dashboard HTML
 
-El dashboard muestra en tiempo real:
+### 8.2 HTML Dashboard
 
-1. **Estado de servicios:** Semáforo de salud de `fc`, `dummy-forecast`, `control-room`
-2. **Estado del FC:** Estado de optimización (OPTIMAL/INFEASIBLE), coste [EUR], setpoints actuales `u[1..5]`
-3. **Setpoints recientes:** Tabla con los últimos 5 setpoints escritos
-4. **KPIs:** Total de setpoints, previsiones y mediciones en BD
-5. **Gestión de BD:** Botones para limpiar tablas individuales o toda la BD
 
----
+The dashboard displays in real time:
 
-## 9. API Summary — Endpoints por Servicio
 
-| Servicio | Puerto | Endpoints |
+1. **Service status:** Health traffic light for `fc`, `dummy-forecast`, `control-room`
+2. **FC status:** Optimization status (OPTIMAL/INFEASIBLE), cost [EUR], current setpoints `u[1..5]`
+3. **Recent setpoints:** Table with the last 5 written setpoints
+4. **KPIs:** Total setpoints, forecasts, and measurements in the DB
+5. **DB management:** Buttons to clear individual tables or the entire DB
+
+
+***
+
+
+## 9. API Summary — Endpoints by Service
+
+
+| Service | Port | Endpoints |
 |----------|--------|-----------|
 | `dummy-forecast` | 5000 | `GET /health` |
 | `fc` (FlexOPTi) | 8080 | `GET /health`, `GET /status` |
 | `control-room` | 9000 | `GET /`, `/health`, `/status`, `/services`, `/metrics`, `/setpoints`, `/forecasts`, `POST /clear` |
 | Trading Manager (ext.) | 9090 | `GET /api/market`, `GET /api/market/{id}/offerinfo`, `GET /api/offer/{id}` |
 
----
 
-## 10. Despliegue
+***
 
-### Comandos Docker
+
+## 10. Deployment
+
+
+### Docker Commands
+
 
 ```bash
-# Construir y arrancar servicios principales
+# Build and start main services
 docker compose -f docker-compose.ewh.yml up --build
 
-# Arrancar en background
+
+# Start in background
 docker compose -f docker-compose.ewh.yml up --build -d
 
-# Re-entrenamiento del Digital Twin (ejecución única)
+
+# Digital Twin retraining (single run)
 docker compose -f docker-compose.ewh.yml --profile retrain run --rm dt-ewh
 
-# Simulación MPC en bucle cerrado (demo)
+
+# Closed-loop MPC simulation (demo)
 docker compose -f docker-compose.ewh.yml stop fc
 docker compose -f docker-compose.ewh.yml --profile sim run --rm fc-sim
 
-# Ver logs
+
+# View logs
 docker compose -f docker-compose.ewh.yml logs -f fc
 docker compose -f docker-compose.ewh.yml logs -f control-room
 
-# Parar todo
+
+# Stop everything
 docker compose -f docker-compose.ewh.yml down
 ```
 
-### Prerequisitos
+
+### Prerequisites
+
 
 - Docker + Docker Compose v2
-- Copiar `.env.example` a `.env`
-- Ejecutar el re-entrenamiento del DT antes del primer arranque del FC (para generar `cold_room_model_continuous.json` en el volumen compartido)
+- Copy `.env.example` to `.env`
+- Run DT retraining before the first FC startup (to generate `cold_room_model_continuous.json` in the shared volume)
 
----
 
-## 11. Resumen de Tecnologías
+***
 
-| Componente | Tecnología | Versión |
+
+## 11. Technology Summary
+
+
+| Component | Technology | Version |
 |------------|------------|---------|
-| Controlador MPC | Julia + JuMP + HiGHS | Julia 1.12 |
+| MPC Controller | Julia + JuMP + HiGHS | Julia 1.12 |
 | Digital Twin (EWH) | R + ctsmTMB | R 4.4.2 |
 | Digital Twin (EV) | Python + PyTorch (DQN) | PyTorch 2.7.0 |
-| Simulador físico | Python + NumPy + SciPy | Python 3.12 |
+| Physical simulator | Python + NumPy + SciPy | Python 3.12 |
 | Dashboard | Python + Flask | Flask 3.1.1 |
-| Previsiones API | Python + FastAPI + NeuralForecast | NeuralForecast 2.0.1 |
-| Previsiones UI | Python + Streamlit | — |
+| Forecasting API | Python + FastAPI + NeuralForecast | NeuralForecast 2.0.1 |
+| Forecasting UI | Python + Streamlit | — |
 | Pipelines | Python + Prefect | Prefect 3.4.15 |
-| Base de datos | SQLite | — |
-| Contenedores | Docker + Docker Compose | v2 |
+| Database | SQLite | — |
+| Containers | Docker + Docker Compose | v2 |
