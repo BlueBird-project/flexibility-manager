@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="slides-format" content="viewport">
+  <title>Generalization of the Flexibility Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-bg: #18181B;
+      --color-bg-deep: #0F0F12;
+      --color-surface: #27272A;
+      --color-text: #FAFAFA;
+      --color-text-secondary: #E4E4E7;
+      --color-text-muted: #A1A1AA;
+      --color-accent-1: #F97316;
+      --color-accent-2: #14B8A6;
+      --color-accent-3: #FEF3C7;
+      --color-glass-bg: rgba(255,255,255,0.06);
+      --color-glass-border: rgba(255,255,255,0.10);
+      --color-vignette: rgba(0,0,0,0.42);
+      --font-display: 'Archivo Black', sans-serif;
+      --font-body: 'DM Sans', sans-serif;
+    }
+  </style>
+  <style>
+    :root { --color-bg: #18181B; --color-text: #FAFAFA; --glow-color-rgb: 249,115,22; --font-body: 'DM Sans', sans-serif; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { background: var(--color-bg); margin: 0; }
+    body { font-family: var(--font-body); color: var(--color-text); overflow: hidden; height: 100vh; width: 100vw; }
+    .deck { width: 100vw; height: 100vh; position: relative; }
+    .slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--color-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: scale(0.95); transition: opacity 0.7s ease, transform 0.7s ease; pointer-events: none; overflow: hidden; }
+    .slide.active { opacity: 1; transform: scale(1); pointer-events: all; }
+    .slide > .content { position: relative; z-index: 2; width: 100%; max-width: 1180px; padding: clamp(1.5rem, 4vw, 3.5rem); }
+    .nav-controls { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; z-index: 100; background: rgba(255,255,255,0.06); backdrop-filter: blur(10px); padding: 10px 24px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.10); }
+    .nav-btn { width: 40px; height: 40px; border: none; background: rgba(255,255,255,0.06); color: #F97316; border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .slide-dots { display: flex; gap: 8px; }
+    .slide-dots .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.16); cursor: pointer; transition: background 0.3s, transform 0.3s; }
+    .slide-dots .dot.active { background: #F97316; transform: scale(1.3); }
+    .slide-counter { font-size: 0.8rem; color: #A1A1AA; min-width: 44px; text-align: center; }
+    .reveal { opacity: 0; transform: translateY(20px); }
+    .gradient-mesh { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+    .blob { position: absolute; border-radius: 50%; filter: blur(80px); animation: float-slow 12s ease-in-out infinite; }
+    .blob:nth-child(2) { animation: float-drift 16s ease-in-out infinite; }
+    .blob:nth-child(3) { animation: float-slow 20s ease-in-out infinite reverse; }
+    .slide::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); background-repeat: repeat; background-size: 256px 256px; opacity: 0.03; mix-blend-mode: overlay; }
+    .slide::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.42) 100%); }
+    .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 22px; padding: 1.1rem 1.15rem; box-shadow: 0 10px 30px rgba(0,0,0,0.18); }
+    .mini { font-size: 0.8rem; color: #A1A1AA; text-transform: uppercase; letter-spacing: 0.12em; }
+    .table-like { display: grid; gap: 10px; }
+    .table-row { display: grid; grid-template-columns: 1.1fr 1fr 1.6fr; gap: 10px; }
+    .table-row > div { padding: 0.75rem 0.85rem; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); font-size: 0.92rem; line-height: 1.25; }
+    .table-head > div { background: rgba(249,115,22,0.14); color: #FEF3C7; font-weight: 700; }
+    .codebox { background: rgba(15,15,18,0.78); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.8rem; white-space: pre-wrap; line-height: 1.25; }
+    .two-col { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 22px; align-items: start; }
+    .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .four-col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .timeline { display: grid; gap: 14px; margin-top: 0.8rem; }
+    .timeline-item { display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: start; }
+    .pill { display: inline-block; padding: 0.35rem 0.7rem; border-radius: 999px; background: rgba(20,184,166,0.14); border: 1px solid rgba(20,184,166,0.35); color: #CCFBF1; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .accent-line { border-left: 4px solid #F97316; padding-left: 14px; }
+    .logo-hero { width: 120px; height: 120px; border-radius: 28px; object-fit: contain; margin: 0 auto 1.2rem; background: rgba(255,255,255,0.08); padding: 20px; box-shadow: 0 0 50px rgba(249,115,22,0.18); animation: float 3s ease-in-out infinite; }
+    .text-glow { text-shadow: 0 0 24px rgba(249,115,22,0.35); }
+    @keyframes float-slow { 0%{transform:translate(0,0) scale(1)} 25%{transform:translate(60px,-50px) scale(1.12)} 50%{transform:translate(-40px,40px) scale(0.9)} 75%{transform:translate(50px,20px) scale(1.08)} 100%{transform:translate(0,0) scale(1)} }
+    @keyframes float-drift { 0%{transform:translate(0,0) scale(1) rotate(0deg)} 33%{transform:translate(-50px,-60px) scale(1.15) rotate(3deg)} 66%{transform:translate(40px,30px) scale(0.88) rotate(-2deg)} 100%{transform:translate(0,0) scale(1) rotate(0deg)} }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-15px)} }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; } }
+  </style>
+</head>
+<body>
+<div class="mouse-spotlight" style="position:fixed;inset:0;z-index:99;pointer-events:none;"></div>
+<div class="deck">
+
+  <div class="slide active" data-slide="1">
+    <div class="gradient-mesh">
+      <div class="blob" style="width:520px;height:520px;top:-120px;right:-120px;background:#F97316;opacity:.16"></div>
+      <div class="blob" style="width:340px;height:340px;bottom:-80px;left:-60px;background:#14B8A6;opacity:.13"></div>
+      <div class="blob" style="width:220px;height:220px;top:42%;left:14%;background:#FEF3C7;opacity:.10"></div>
+    </div>
+    <canvas class="particle-canvas" style="position:absolute;inset:0;z-index:1;"></canvas>
+    <div class="content text-center">
+      <img class="logo-hero reveal" src="https://cdn.simpleicons.org/openai/FFFFFF" alt="Framework icon">
+      <div class="mini reveal">Development review deck</div>
+      <h1 class="font-display text-[clamp(2.4rem,5.6vw,4.8rem)] font-black tracking-tight mb-4 reveal bg-linear-to-br from-accent-1 via-accent-3 to-accent-2 bg-clip-text text-transparent">Generalization of the Flexibility Manager</h1>
+      <p class="text-[clamp(1rem,1.8vw,1.35rem)] text-text-secondary max-w-[920px] mx-auto reveal">Turning pilot-specific MPC code into a config-driven framework for new assets, zones, models, and power topologies.</p>
+      <div class="mt-8 flex justify-center gap-4 reveal">
+        <span class="pill">Architecture</span>
+        <span class="pill">MPC</span>
+        <span class="pill">Config-driven onboarding</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="2">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-70px;right:-70px;background:#F97316;opacity:.09"></div><div class="blob" style="width:260px;height:260px;bottom:-50px;left:-30px;background:#14B8A6;opacity:.07"></div></div>
+    <div class="content">
+      <div class="mini reveal">Objective</div>
+      <h2 class="font-display text-[clamp(2rem,4vw,3.1rem)] mb-6 reveal">What the target state looks like</h2>
+      <div class="two-col">
+        <div class="card reveal">
+          <div class="accent-line">
+            <p class="text-lg text-text-secondary leading-relaxed">Any new pilot should be defined <span class="text-accent-3 font-bold">only through JSON/YAML configuration</span>, without editing Julia, Python, or R.</p>
+          </div>
+          <div class="timeline mt-6">
+            <div class="timeline-item"><div class="mini">User defines</div><div>Assets, zones, state variables, controls, disturbances, limits, model type, market link, and cost function.</div></div>
+            <div class="timeline-item"><div class="mini">System does</div><div>Parses the digital twin, builds the optimization problem dynamically, solves it, and writes optimal setpoints.</div></div>
+          </div>
+        </div>
+        <div class="grid gap-4">
+          <div class="card reveal"><div class="mini">Assets</div><div class="text-xl font-bold mt-2">Cold rooms, heat pumps, EV chargers, tanks</div></div>
+          <div class="card reveal"><div class="mini">Models</div><div class="text-xl font-bold mt-2">State-space, ARX, future ML / neural</div></div>
+          <div class="card reveal"><div class="mini">Outputs</div><div class="text-xl font-bold mt-2">Optimal, generic, semantically labeled setpoints</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="3">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-80px;right:-60px;background:#14B8A6;opacity:.08"></div><div class="blob" style="width:240px;height:240px;bottom:-60px;left:-40px;background:#F97316;opacity:.07"></div></div>
+    <div class="content">
+      <div class="mini reveal">Diagnosis</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-5 reveal">Where the solution is coupled today</h2>
+      <div class="table-like reveal">
+        <div class="table-row table-head"><div>Layer</div><div>Files</div><div>Hardcoded coupling</div></div>
+        <div class="table-row"><div>Julia types</div><div><code>core/types.jl</code></div><div>Concrete structs like <code>Ewh</code>, <code>Montcada</code>, <code>Karno</code>.</div></div>
+        <div class="table-row"><div>Constraints</div><div><code>pilots/ewh/constraints.jl</code></div><div>Literal zone names, temperature bands, compressor power limits.</div></div>
+        <div class="table-row"><div>MPC formulation</div><div><code>mpc_main.jl</code></div><div>Objective, hysteresis, Big-M, proportional allocation, power balance bound to EWH topology.</div></div>
+        <div class="table-row"><div>Parsers / output</div><div><code>parse_*.jl</code></div><div>EWH-specific DT schema, sensor schema, forecast layout, output keys and units.</div></div>
+        <div class="table-row"><div>Ops layer</div><div>DB, forecast, dashboard, Docker</div><div>Room counts, DB columns, visible fields, and services are pilot-specific.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="4">
+    <div class="gradient-mesh"><div class="blob" style="width:380px;height:380px;top:-90px;right:-70px;background:#F97316;opacity:.10"></div><div class="blob" style="width:220px;height:220px;bottom:-40px;left:-30px;background:#FEF3C7;opacity:.07"></div></div>
+    <div class="content">
+      <div class="mini reveal">Hardcoded values</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">The current implementation still assumes EWH</h2>
+      <div class="two-col">
+        <div class="codebox reveal">N_ROOMS = 5
+nx = 10  (5 zones × 2 states)
+nu = 5   (4 fridges + 1 freezer)
+nd = 6   (1 T_amb + 5 door_loads)
+nfridge = nu - 1 = 4
+air_idx(r) = 2r - 1
+T_dairy ∈ [2, 8] °C
+T_freezer ∈ [-40, -18] °C
+p1_max = 3300 kW
+p2_max = 2900 kW
+p3_max = 2700 kW
+hysteresis_band = 1.0 °C
+big_M = 1e5</div>
+        <div class="grid gap-4">
+          <div class="card reveal"><div class="mini">Control flow issue</div><div class="mt-2">The controller still computes <code>u_first = vcat(oy[:u][1,:], oy[:p3][1])</code>, so the first actuation path is not generic.</div></div>
+          <div class="card reveal"><div class="mini">DB issue</div><div class="mt-2">Columns such as <code>T_air</code>, <code>T_product</code>, <code>door_load</code>, <code>u</code>, and <code>p3</code> encode one asset class.</div></div>
+          <div class="card reveal"><div class="mini">Forecast issue</div><div class="mt-2">Dummy forecast assumes 5 rooms, ambient temperature = 18, and zero door load.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="5">
+    <div class="gradient-mesh"><div class="blob" style="width:400px;height:400px;top:-80px;right:-90px;background:#14B8A6;opacity:.09"></div><div class="blob" style="width:260px;height:260px;bottom:-50px;left:-30px;background:#F97316;opacity:.07"></div></div>
+    <canvas class="particle-canvas-ambient" style="position:absolute;inset:0;z-index:1;"></canvas>
+    <div class="content">
+      <div class="mini reveal">Architecture</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Proposed config-driven flow</h2>
+      <div class="grid grid-cols-[1.1fr_0.9fr] gap-5 items-start">
+        <div class="card reveal">
+          <div class="mini">Design principle</div>
+          <p class="text-lg text-text-secondary mt-2">Everything currently encoded as pilot-specific logic becomes declarative configuration. The generic MPC kernel reads config, builds JuMP dynamically, solves, and writes semantic results.</p>
+          <div class="timeline mt-5">
+            <div class="timeline-item"><div class="mini">Inputs</div><div>Pilot config, digital twin, sensors DB, forecasts, trading manager.</div></div>
+            <div class="timeline-item"><div class="mini">Engine</div><div>Read config → parse DT → load sensors → load forecasts → build JuMP → solve → write setpoints.</div></div>
+            <div class="timeline-item"><div class="mini">Output schema</div><div><code>(timestamp, zone_id, control_name, value)</code></div></div>
+          </div>
+        </div>
+        <div class="codebox reveal">pilot_config.json
+  ├─ zones
+  ├─ controls
+  ├─ disturbances
+  ├─ dynamics
+  ├─ power_topology
+  ├─ objective
+  ├─ market
+  ├─ mpc
+  ├─ retraining
+  └─ database
+
+Generic MPC Engine
+  1. Reads pilot_config
+  2. Parses DT
+  3. Reads sensors
+  4. Reads forecasts
+  5. Builds JuMP
+  6. Solves
+  7. Writes generic setpoints</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="6">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-70px;right:-70px;background:#F97316;opacity:.09"></div><div class="blob" style="width:240px;height:240px;bottom:-50px;left:-40px;background:#14B8A6;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Pilot config</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">`pilot_config.json` becomes the system contract</h2>
+      <div class="three-col">
+        <div class="card reveal"><div class="mini">Zones</div><div class="mt-2 text-lg font-bold">State variables, limits, and setpoint ranges per zone</div><p class="mt-2 text-sm text-text-secondary">Examples: dairy, freezer, zone_10; T_air, T_product, T_room.</p></div>
+        <div class="card reveal"><div class="mini">Controls & disturbances</div><div class="mt-2 text-lg font-bold">Continuous / binary controls and global / per-zone disturbances</div><p class="mt-2 text-sm text-text-secondary">Examples: p1, p2, p3, sp_hvac; T_ambient, occupancy, solar_irradiance.</p></div>
+        <div class="card reveal"><div class="mini">Dynamics & topology</div><div class="mt-2 text-lg font-bold">Model type, vector layouts, compressor groups, objective, market, DB</div><p class="mt-2 text-sm text-text-secondary">The engine does not need to know whether the pilot is EWH or Montcada.</p></div>
+      </div>
+      <div class="grid grid-cols-2 gap-4 mt-5">
+        <div class="card reveal"><div class="mini">EWH example</div><div class="mt-2">5 cold storage rooms, shared compressor groups, state-space model, energy-cost objective.</div></div>
+        <div class="card reveal"><div class="mini">Montcada example</div><div class="mt-2">38 HVAC zones, ARX dynamics, continuous HVAC setpoint, mode switching in topology.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="7">
+    <div class="gradient-mesh"><div class="blob" style="width:350px;height:350px;top:-80px;right:-70px;background:#14B8A6;opacity:.09"></div><div class="blob" style="width:260px;height:260px;bottom:-40px;left:-30px;background:#FEF3C7;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Core engine</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">FlexOPTi refactor: generic structs, parser, constraints</h2>
+      <div class="grid grid-cols-2 gap-5">
+        <div class="card reveal">
+          <div class="mini">Types</div>
+          <p class="mt-2">Replace concrete pilot structs with <code>GenericPilot</code> + <code>PilotConfig</code> and typed config objects such as <code>ZoneConfig</code> and <code>ControlConfig</code>.</p>
+        </div>
+        <div class="card reveal">
+          <div class="mini">Digital twin parser</div>
+          <p class="mt-2">Dispatch by <code>dynamics.type</code>, e.g. <code>:state_space</code> or <code>:arx</code>, while preserving pilot-specific DT JSON structures.</p>
+        </div>
+        <div class="card reveal">
+          <div class="mini">Dimensional validation</div>
+          <p class="mt-2">Validate matrix sizes against config layouts: <code>A(nx,nx)</code>, <code>B(nx,nu)</code>, <code>E(nx,nd)</code>.</p>
+        </div>
+        <div class="card reveal">
+          <div class="mini">Constraint loading</div>
+          <p class="mt-2">Build limits directly from config for zone bounds, setpoints, and control min/max values.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="8">
+    <div class="gradient-mesh"><div class="blob" style="width:380px;height:380px;top:-70px;right:-80px;background:#F97316;opacity:.10"></div><div class="blob" style="width:260px;height:260px;bottom:-60px;left:-40px;background:#14B8A6;opacity:.07"></div></div>
+    <div class="content">
+      <div class="mini reveal">MPC builder</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Dynamic JuMP model assembly</h2>
+      <div class="four-col">
+        <div class="card reveal"><div class="mini">Variables</div><div class="mt-2 font-bold">States + setpoints + typed controls</div><p class="mt-2 text-sm text-text-secondary">Continuous controls get bounds; binary controls respect MILP horizon and relax afterwards if needed.</p></div>
+        <div class="card reveal"><div class="mini">Dynamics</div><div class="mt-2 font-bold">`X = Ξ·U + M·ξ₁ + Ψ·Δ`</div><p class="mt-2 text-sm text-text-secondary">Control and disturbance vectors are built from layouts, not file-specific assumptions.</p></div>
+        <div class="card reveal"><div class="mini">Comfort</div><div class="mt-2 font-bold">Bounds per observed state</div><p class="mt-2 text-sm text-text-secondary">For every zone and every constrained state name in config.</p></div>
+        <div class="card reveal"><div class="mini">Objective</div><div class="mt-2 font-bold">Composable cost terms</div><p class="mt-2 text-sm text-text-secondary">Grid buy / sell terms resolved from a price source such as the trading manager.</p></div>
+      </div>
+      <div class="card mt-5 reveal"><div class="mini">Critical point</div><div class="mt-2">This is the structural shift: the model is no longer authored once per pilot; it is assembled from declarative metadata and reusable topology blocks.</div></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="9">
+    <div class="gradient-mesh"><div class="blob" style="width:380px;height:380px;top:-80px;right:-80px;background:#14B8A6;opacity:.10"></div><div class="blob" style="width:250px;height:250px;bottom:-50px;left:-50px;background:#F97316;opacity:.07"></div></div>
+    <canvas class="particle-canvas-ambient" style="position:absolute;inset:0;z-index:1;"></canvas>
+    <div class="content">
+      <div class="mini reveal">Reusable topology blocks</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Constraint patterns become a reusable catalog</h2>
+      <div class="table-like reveal">
+        <div class="table-row table-head"><div>Block</div><div>Pattern</div><div>Pilots / use cases</div></div>
+        <div class="table-row"><div><code>shared_modulated_plus_binary</code></div><div>P1 + on/off P2 shared across zones with proportional allocation and Kgain.</div><div>EWH cold rooms 1-4.</div></div>
+        <div class="table-row"><div><code>hysteresis_binary</code></div><div>On/off logic with Big-M hysteresis around the setpoint.</div><div>EWH freezer.</div></div>
+        <div class="table-row"><div><code>mode_switching</code></div><div>Heating/cooling models with binary mode selection and conditional dynamics.</div><div>Montcada HVAC.</div></div>
+        <div class="table-row"><div><code>continuous_setpoint</code>, <code>ev_charging</code>, <code>tank_level</code>, <code>battery_soc</code></div><div>Reusable future blocks for direct setpoint control, charging deadlines, mass balance, and storage dynamics.</div><div>Generic / future pilots.</div></div>
+      </div>
+      <div class="card mt-5 reveal"><div class="mini">Implementation pattern</div><div class="mt-2">A Julia registry maps <code>group.type</code> to the corresponding builder function, so adding a topology means adding a new block, not rewriting the MPC kernel.</div></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="10">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-70px;right:-80px;background:#F97316;opacity:.09"></div><div class="blob" style="width:230px;height:230px;bottom:-40px;left:-40px;background:#14B8A6;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Production controller & DB</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Generic operations layer: sensors, setpoints, and storage</h2>
+      <div class="grid grid-cols-3 gap-5">
+        <div class="card reveal"><div class="mini">Generic sensor read</div><div class="mt-2">Build SQL columns dynamically from the configured state layout and reconstruct <code>x0</code> by zone/state mapping.</div></div>
+        <div class="card reveal"><div class="mini">Generic setpoint write</div><div class="mt-2">Write first-step actions using <code>(timestamp, zone_id, control_name, value)</code> for each control mapping.</div></div>
+        <div class="card reveal"><div class="mini">DB redesign</div><div class="mt-2">Move to EAV-style tables for <code>measurements</code>, <code>disturbance_forecasts</code>, and <code>setpoints</code>.</div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-4 mt-5">
+        <div class="card reveal"><div class="mini">Why EAV</div><div class="mt-2">Same tables for any pilot, no schema migration for new variables, easy filtering by <code>zone_id</code> and <code>var_name</code>.</div></div>
+        <div class="card reveal"><div class="mini">Trade-off</div><div class="mt-2">A fixed-column alternative is faster but less flexible; the recommendation is EAV for maximum pilot portability.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="11">
+    <div class="gradient-mesh"><div class="blob" style="width:380px;height:380px;top:-90px;right:-70px;background:#14B8A6;opacity:.09"></div><div class="blob" style="width:240px;height:240px;bottom:-50px;left:-40px;background:#FEF3C7;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Forecast / dashboard / Docker</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">The outer services must become config-aware too</h2>
+      <div class="three-col">
+        <div class="card reveal"><div class="mini">Forecast service</div><div class="mt-2 font-bold">Read disturbances from config</div><p class="mt-2 text-sm text-text-secondary">Write global and per-zone fallback forecasts from <code>disturbances</code> and <code>zones</code>.</p></div>
+        <div class="card reveal"><div class="mini">Control Room</div><div class="mt-2 font-bold">Build views dynamically</div><p class="mt-2 text-sm text-text-secondary">Pilot name, zones, controls, and recent setpoints come from the active config.</p></div>
+        <div class="card reveal"><div class="mini">Docker</div><div class="mt-2 font-bold">Single compose file</div><p class="mt-2 text-sm text-text-secondary">Use <code>PILOT_ID</code> to switch configs and optional DT Dockerfile/retraining profile.</p></div>
+      </div>
+      <div class="card mt-5 reveal"><div class="mini">Operational effect</div><div class="mt-2">Switching from EWH to Montcada—or onboarding a new water works pilot—should be an environment/config decision rather than a branch of code.</div></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="12">
+    <div class="gradient-mesh"><div class="blob" style="width:400px;height:400px;top:-100px;right:-90px;background:#F97316;opacity:.11"></div><div class="blob" style="width:260px;height:260px;bottom:-60px;left:-40px;background:#14B8A6;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Implementation plan</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Four phases with increasing structural impact</h2>
+      <div class="timeline">
+        <div class="timeline-item reveal"><div class="card"><div class="mini">Phase 1</div><div class="text-xl font-bold mt-1">Config-driven constraints</div></div><div class="card">Create EWH config, load it in Julia, rewrite constraint loading, keep current MPC intact, validate with identical numerical results.</div></div>
+        <div class="timeline-item reveal"><div class="card"><div class="mini">Phase 2</div><div class="text-xl font-bold mt-1">Generic DB + parameterized controller</div></div><div class="card">Move to generic EAV schema, rewrite DB read/write, adapt dummy forecast and dashboard to config.</div></div>
+        <div class="timeline-item reveal"><div class="card"><div class="mini">Phase 3</div><div class="text-xl font-bold mt-1">GenericPilot + dynamic MPC</div></div><div class="card">Refactor types, DT parser, variable builder, generic constraints, objective, batch disturbances, and generic output packaging.</div></div>
+        <div class="timeline-item reveal"><div class="card"><div class="mini">Phase 4</div><div class="text-xl font-bold mt-1">Generic Docker + onboarding</div></div><div class="card">Unify compose, document new pilot onboarding, provide config template, and add JSON Schema validation.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="13">
+    <div class="gradient-mesh"><div class="blob" style="width:380px;height:380px;top:-90px;right:-80px;background:#14B8A6;opacity:.10"></div><div class="blob" style="width:250px;height:250px;bottom:-50px;left:-50px;background:#F97316;opacity:.08"></div></div>
+    <div class="content">
+      <div class="mini reveal">Validation checklist</div>
+      <h2 class="font-display text-[clamp(1.9rem,4vw,3rem)] mb-6 reveal">Definition of done for the generalized framework</h2>
+      <div class="grid grid-cols-2 gap-5">
+        <div class="card reveal"><div class="mini">Regression</div><div class="mt-2">EWH must produce exactly the same setpoints as before.</div></div>
+        <div class="card reveal"><div class="mini">Zero-code onboarding</div><div class="mt-2">A new pilot must be definable using only <code>pilot_config.json</code>.</div></div>
+        <div class="card reveal"><div class="mini">Generic persistence</div><div class="mt-2">DB schema must support any mix of zones and variables.</div></div>
+        <div class="card reveal"><div class="mini">Dynamic UI and forecast</div><div class="mt-2">Dashboard and dummy forecast must reflect the active config automatically.</div></div>
+        <div class="card reveal"><div class="mini">Deployment switch</div><div class="mt-2">Changing pilots must be possible with <code>PILOT_ID</code>.</div></div>
+        <div class="card reveal"><div class="mini">Safety net</div><div class="mt-2">JSON Schema validation and unit tests must be parameterized with example configs.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="14">
+    <div class="gradient-mesh">
+      <div class="blob" style="width:500px;height:500px;top:-120px;right:-100px;background:#F97316;opacity:.16"></div>
+      <div class="blob" style="width:320px;height:320px;bottom:-70px;left:-50px;background:#14B8A6;opacity:.13"></div>
+      <div class="blob" style="width:220px;height:220px;top:45%;left:18%;background:#FEF3C7;opacity:.10"></div>
+    </div>
+    <canvas class="particle-canvas" style="position:absolute;inset:0;z-index:1;"></canvas>
+    <div class="content text-center">
+      <div class="mini reveal">Review focus for the dev team</div>
+      <h2 class="font-display text-[clamp(2.3rem,5vw,4rem)] mb-5 reveal bg-linear-to-br from-accent-1 via-accent-3 to-accent-2 bg-clip-text text-transparent">Key decisions to align on</h2>
+      <div class="grid grid-cols-3 gap-5 mt-6">
+        <div class="card reveal"><div class="mini">1</div><div class="text-xl font-bold mt-2">Config schema scope</div><p class="mt-2 text-sm text-text-secondary">How much topology and model semantics should live in config vs reusable code blocks.</p></div>
+        <div class="card reveal"><div class="mini">2</div><div class="text-xl font-bold mt-2">Migration strategy</div><p class="mt-2 text-sm text-text-secondary">How to move from current EWH-specific DB and services without breaking regression guarantees.</p></div>
+        <div class="card reveal"><div class="mini">3</div><div class="text-xl font-bold mt-2">Builder boundaries</div><p class="mt-2 text-sm text-text-secondary">Where to separate config parsing, validation, MPC assembly, topology blocks, and runtime orchestration.</p></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="nav-controls">
+  <button class="nav-btn" aria-label="Previous slide" onclick="changeSlide(-1)">&#8249;</button>
+  <div class="slide-dots" id="dots"></div>
+  <button class="nav-btn" aria-label="Next slide" onclick="changeSlide(1)">&#8250;</button>
+  <span class="slide-counter" id="counter">1 / 14</span>
+</div>
+
+<script>
+let current = 1;
+const total = document.querySelectorAll('.slide').length;
+const dotsContainer = document.getElementById('dots');
+const counter = document.getElementById('counter');
+for (let i = 1; i <= total; i++) { const dot = document.createElement('div'); dot.className = 'dot' + (i === 1 ? ' active' : ''); dot.onclick = () => goToSlide(i); dotsContainer.appendChild(dot); }
+function goToSlide(n) { const prev = document.querySelector('.slide.active'); const next = document.querySelector(`.slide[data-slide="${n}"]`); if (prev) prev.classList.remove('active'); if (next) { next.classList.add('active'); animateSlide(next); } current = n; updateNav(); }
+function changeSlide(dir) { let next = current + dir; if (next < 1) next = total; if (next > total) next = 1; goToSlide(next); }
+function updateNav() { document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i + 1 === current)); counter.textContent = current + ' / ' + total; }
+document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); changeSlide(1); } if (e.key === 'ArrowLeft') { e.preventDefault(); changeSlide(-1); } });
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', (e) => { const diff = touchStartX - e.changedTouches[0].clientX; if (Math.abs(diff) > 50) changeSlide(diff > 0 ? 1 : -1); });
+function animateSlide(slide) {
+  slide.querySelectorAll('.reveal').forEach((el, i) => {
+    el.style.transition = 'none'; el.style.opacity = '0'; el.style.transform = 'translateY(20px)'; el.offsetHeight;
+    const delay = i * 0.08; el.style.transition = `opacity 0.35s ease ${delay}s, transform 0.35s ease ${delay}s`; el.style.opacity = '1'; el.style.transform = 'translateY(0px)';
+  });
+}
+document.addEventListener('mousemove', (e) => {
+  const spotlight = document.querySelector('.mouse-spotlight');
+  if (spotlight) spotlight.style.background = `radial-gradient(600px circle at ${e.clientX}px ${e.clientY}px, rgba(249,115,22,0.06), transparent 40%)`;
+});
+window.initParticles = function(canvas, options) {
+  if (!canvas) return; const ctx = canvas.getContext('2d'); canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+  const interactive = options.interactive !== false; const count = options.count || (interactive ? 55 : 18); let mx = -1000, my = -1000;
+  const particles = Array.from({ length: count }, () => ({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, size: Math.random() * 2.5 + 0.8, alpha: Math.random() * 0.35 + 0.1 }));
+  if (interactive) {
+    canvas.addEventListener('mousemove', (e) => { const rect = canvas.getBoundingClientRect(); mx = e.clientX - rect.left; my = e.clientY - rect.top; });
+    canvas.addEventListener('mouseleave', () => { mx = -1000; my = -1000; });
+  }
+  (function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+      if (interactive) { const dx = p.x - mx, dy = p.y - my, dist = Math.sqrt(dx * dx + dy * dy); if (dist < 120 && dist > 0) { const force = (120 - dist) / 120 * 2; p.vx += (dx / dist) * force * 0.1; p.vy += (dy / dist) * force * 0.1; } }
+      p.vx *= 0.98; p.vy *= 0.98; p.x += p.vx; p.y += p.vy; if (p.x < 0) p.x = canvas.width; if (p.x > canvas.width) p.x = 0; if (p.y < 0) p.y = canvas.height; if (p.y > canvas.height) p.y = 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fillStyle = `rgba(249,115,22,${p.alpha})`; ctx.fill();
+    }); requestAnimationFrame(animate);
+  })();
+};
+document.querySelectorAll('.particle-canvas').forEach(c => window.initParticles(c, { interactive: true, count: 55 }));
+document.querySelectorAll('.particle-canvas-ambient').forEach(c => window.initParticles(c, { interactive: false, count: 18 }));
+try { animateSlide(document.querySelector('.slide.active')); } catch(e) {}
+</script>
+</body>
+</html>
