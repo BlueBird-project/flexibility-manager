@@ -1,5 +1,3 @@
-Aquí tienes la traducción al inglés, conservando la estructura Markdown, las tablas y los bloques de código. Al traducir documentación técnica en Markdown, es buena práctica mantener intacto el formato y no alterar el contenido dentro de bloques de código salvo que sea texto descriptivo claramente no ejecutable. [docs.github](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-and-highlighting-code-blocks)
-
 # Detailed Analysis — BlueBird Flexibility Manager
 
 
