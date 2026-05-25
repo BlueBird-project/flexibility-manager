@@ -1,7 +1,4 @@
-Aquí tienes la traducción al inglés, manteniendo la estructura Markdown y el contenido técnico sin alterar el significado. Los principios de traducción de Markdown suelen preservar encabezados, listas, tablas y bloques de código mientras se traduce solo el texto natural, que es lo que he aplicado aquí. [doc.openl](https://doc.openl.io/translate/md/spanish)
-
 # Roadmap: Generalization of the Flexibility Manager
-
 
 ## Objective
 
