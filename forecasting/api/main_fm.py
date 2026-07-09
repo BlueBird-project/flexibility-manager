@@ -51,13 +51,15 @@ def InferenceFM(data_to_forecast, forecast_horizon = 1, freq = "H", get_emission
 
     if get_emissions:
         tracker.stop()
-
-        data_process = {
-            "duration": tracker.final_emissions_data.duration,
-            "emissions": tracker.final_emissions_data.emissions,
-            "energy_consumed": tracker.final_emissions_data.energy_consumed,
-            "water_consumed": tracker.final_emissions_data.water_consumed
-        }
+        try:
+            data_process = {
+                "duration": tracker.final_emissions_data.duration,
+                "emissions": tracker.final_emissions_data.emissions,
+                "energy_consumed": tracker.final_emissions_data.energy_consumed,
+                "water_consumed": tracker.final_emissions_data.water_consumed
+            }
+        except:
+            data_process = {}
 
     if get_emissions:
         return {"forecast": forecast_dict, "process_info": data_process}
@@ -85,22 +87,27 @@ def predict(data: PredictionInput):
     unique_list = data.unique_id
     value_list = data.y
 
-    results = InferenceFM(
-        data_to_forecast = pd.DataFrame({"ds": ds_list, "unique_id": unique_list, "y": value_list}),
-        forecast_horizon = data.forecast_horizon,
-        freq = data.freq,
-        get_emissions = data.emissions,
-        country_iso_code = data.country_iso_code,
-    )
+    try:
+        results = InferenceFM(
+            data_to_forecast = pd.DataFrame({"ds": ds_list, "unique_id": unique_list, "y": value_list}),
+            forecast_horizon = data.forecast_horizon,
+            freq = data.freq,
+            get_emissions = data.emissions,
+            country_iso_code = data.country_iso_code,
+        )
 
-    if data.emissions:
+        if data.emissions:
+            forecasting = {
+                "forecast": results["forecast"],
+                "process_info": results["process_info"]
+            }
+        else:
+            forecasting = {
+                "forecast": results["forecast"]
+            }
+    except Exception as e:
         forecasting = {
-            "forecast": results["forecast"],
-            "process_info": results["process_info"]
-        }
-    else:
-        forecasting = {
-            "forecast": results["forecast"]
+            "Error": str(e)
         }
 
     return forecasting
