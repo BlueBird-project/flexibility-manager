@@ -1,0 +1,269 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\newcommand{\madsen}[1]{\textcolor{gray}{[Madsen, \S#1]}}
+
+\title{Understanding the Karno tank signals: a statistical route\\
+\large following Madsen, \emph{Time Series Analysis}}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Context}
+
+The grey-box model (\texttt{scripts/graybox.R}, \texttt{ctsmTMB}) treats the
+storage tank as two lumped thermal masses, $T_{\text{top}}$ and
+$T_{\text{bot}}$, coupled by a linear conductive term $k\,(T_{\text{top}} -
+T_{\text{bot}})$, driven by the air-source heat pump's electrical power
+$P_{\text{el}}$ (into the top node) and the district-heating draw
+$\dot Q_{\text{dist}}$ (at the bottom node), with a loss term $UA\,(T -
+T_{\text{amb}})$ on each node.
+
+Fitting this model to $\sim$11 days of real logged data
+(\texttt{data/karno-410708\_raw\_k0001.parquet}, 2026-05-13 to 2026-05-24,
+5-minute sampling) produces a badly behaved fit: several parameters
+($C_{\text{top}}$, $C_{\text{bot}}$, $k$, $a$) pin at whatever bound they are
+given rather than converging to an interior optimum, and the measurement/process
+noise parameters split asymmetrically between the two channels ($\sigma_{y_1}
+\to$ its upper bound, $\sigma_{y_2} \to$ its lower bound, or vice versa
+depending on how the bounds are set) --- the classic sign of the optimizer
+using one channel's noise term to paper over a structural mismatch instead of
+a real fit.
+
+This document is not a fix. It is a statistical route --- grounded in Madsen's
+\emph{Time Series Analysis} --- for actually characterizing the input/output
+dynamics of the two sensors \emph{before} committing to any particular ODE
+structure again.
+
+\subsection{Physical layout}
+
+\begin{center}
+\begin{tabular}{c}
+top of tank \\
+$\vert$ 30 cm \\
+$T_{\text{top}}$ sensor \\
+$\vert$ 70 cm \\
+$T_{\text{bot}}$ sensor \\
+$\vert$ 30 cm \\
+bottom of tank
+\end{tabular}
+\end{center}
+
+Heat is added at the $T_{\text{top}}$ level; the district-heating draw
+(``cool'') is taken out at the $T_{\text{bot}}$ level. Despite this
+asymmetric but plausible geometry, the observed behaviour is not what a
+simple stratified/conductive model predicts:
+
+\begin{itemize}
+\item $T_{\text{top}}$: flat, then declines with no heat-pump input; rises
+  when the heat pump runs. This is expected -- it is the injection point.
+\item $T_{\text{bot}}$: rises \emph{directly} when the heat pump runs, with
+  no visible delay consistent with a thermocline having to migrate 70\,cm
+  down past the sensor.
+\end{itemize}
+
+\section{The route}
+
+The steps below are ordered the way they should actually be executed: each
+step's output is required input for the next. Section numbers refer to
+Madsen, \emph{Time Series Analysis}.
+
+\subsection*{Step 0 --- univariate structure} \madsen{5.5, 6.2.1}
+
+Before touching cross-relationships, look at each series alone:
+autocorrelation function (ACF) and partial ACF (PACF) of $T_{\text{top}}$,
+$T_{\text{bot}}$, $P_{\text{el}}$, $\dot Q_{\text{dist}}$ individually
+(\S6.2.1, estimation of the ACF; \S5.5 for what AR/MA signatures look like in
+the ACF/PACF). At 5-minute sampling all four series will be highly
+persistent (ACF decaying slowly, near unit-root behaviour). This matters
+directly for Step 2: it is exactly what makes a \emph{raw} cross-correlation
+between two persistent series unreliable.
+
+\subsection*{Step 1 --- raw cross-correlation function (CCF)} \madsen{6.2.2}
+
+The cross-covariance and cross-correlation functions,
+\[
+  \hat\gamma_{xy}(\ell) = \frac{1}{n}\sum_{t} (x_t - \bar x)(y_{t+\ell} -
+  \bar y), \qquad
+  \hat\rho_{xy}(\ell) = \frac{\hat\gamma_{xy}(\ell)}{\sqrt{\hat\gamma_{xx}(0)\,
+  \hat\gamma_{yy}(0)}},
+\]
+computed for a range of lags $\ell$, is the formal version of ``lag
+correlation''. Do this first as a baseline, but treat the result with
+suspicion: two autocorrelated series will show spuriously significant CCF
+values at many lags purely because of their own internal persistence, not
+because one drives the other. This is why Step 2 exists.
+
+\subsection*{Step 2 --- pre-whitening} \madsen{9.6.1}
+
+The standard (Box--Jenkins) fix for the Step 1 problem:
+\begin{enumerate}[label=(\roman*)]
+\item Fit a model (AR($p$) is enough in practice) to the input series $x_t$
+  such that the residuals $a_t = x_t - \sum_i \phi_i x_{t-i}$ are
+  approximately white noise.
+\item Apply the \emph{same} filter to the output series: $b_t = y_t -
+  \sum_i \phi_i y_{t-i}$.
+\item Compute the CCF between $a_t$ and $b_t$.
+\end{enumerate}
+Because $a_t$ is white, the resulting cross-correlation is a clean,
+interpretable estimate of the dynamic relationship between $x$ and $y$ --
+its shape approximates the system's impulse response (Step 3), and its
+confidence bands are the simple $\pm 1.96/\sqrt{n}$ used for white-noise
+input.
+
+\emph{This has already been run} (\texttt{scripts/diagnostics.R}) for
+$P_{\text{el}} \to T_{\text{top}}$ and $P_{\text{el}} \to T_{\text{bot}}$.
+Results, with the convention that a positive lag means the input leads the
+output:
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+Pair & AR order & peak lag & peak $r$ \\
+\midrule
+$P_{\text{el}} \to T_{\text{bot}}$ & 20 & $+1$ sample ($+5$ min) & $+0.296$ \\
+$P_{\text{el}} \to T_{\text{top}}$ & 20 & $0$ samples ($0$ min) & $-0.393$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$P_{\text{el}} \to T_{\text{bot}}$ is exactly what a direct heat input
+should look like: small positive lag, positive sign. $P_{\text{el}} \to
+T_{\text{top}}$ is not: the strongest relationship is \emph{instantaneous
+and negative}, at no lag where a delayed positive response would be
+expected from direct heat injection at that sensor's level.
+
+\subsection*{Step 3 --- reading the CCF as an impulse response} \madsen{8.3--8.4}
+
+Once pre-whitened, the shape of the cross-correlation function \emph{is} a
+(scaled) estimate of the system's impulse-response weights $v_0, v_1, v_2,
+\dots$ relating input to output (\S8.3.1, transfer function models;
+\S8.4, identification of transfer function models from the CCF). In
+practice: a single sharp spike at some lag $\ell_0$ suggests a simple gain
+plus dead time of $\ell_0$ steps; a spike that decays geometrically over
+several lags suggests a first-order lag (single time constant); an
+oscillating or sign-changing pattern (which is what both the raw data and
+the model residuals show here, see Step 5) suggests either an
+under-differenced/near-unit-root series contaminating the estimate, or --
+more likely given the context -- a genuinely mis-specified relationship
+that no simple transfer function order will resolve, because the assumed
+causal direction is wrong (see \S\ref{sec:caveat}).
+
+\subsection*{Step 4 --- multiple-input extension} \madsen{8.5}
+
+There are four real candidate inputs ($P_{\text{el}}$, $\delta$ = GSHP
+on/off, $\dot Q_{\text{dist}}$, $T_{\text{amb}}$). \S8.5 covers identifying
+and estimating transfer functions with several regressors simultaneously
+(moment relations \S8.5.1, spectral relations \S8.5.2, identification
+\S8.5.3) rather than one input at a time, which matters once individual
+pairwise CCFs are understood and need to be combined without
+double-counting shared variance (e.g.\ $P_{\text{el}}$ and $\delta$ are
+correlated with each other, since both indicate heat-pump activity).
+
+\subsection*{Step 5 --- residual analysis of the currently fitted model} \madsen{6.6}
+
+For the model that is already fitted (\texttt{fit} object from
+\texttt{model\$estimate()} in \texttt{ctsmTMB}), the one-step-ahead
+standardized innovations (\texttt{fit\$residuals\$normalized}) should behave
+like white noise \emph{if} the state equations correctly capture the
+system's dynamics. Two checks (\S6.6.2, residual analysis):
+\begin{enumerate}[label=(\alph*)]
+\item ACF of each residual series alone -- significant autocorrelation means
+  the state's own dynamics (not just the inputs) are under-specified.
+\item Cross-correlation of each (pre-whitened, Step 2) input against the
+  residual series -- significant correlation at some lag means that input's
+  effect is not fully captured by the fitted model at that lag.
+\end{enumerate}
+
+\emph{Already run.} Result: both residual series show strong, alternating-sign,
+slowly-decaying autocorrelation out past lag 40 (200 minutes) -- the current
+fit is a poor one-step predictor for both states, not just $T_{\text{top}}$.
+However, cross-correlating the residuals against $P_{\text{el}}$ shows
+\emph{no} significant lag for either channel. That combination is
+informative: the problem is not a missing lagged copy of $P_{\text{el}}$ in
+the state equation (which residual cross-correlation would have caught) --
+it is something the current noise-parameter degeneracy (Step-2 finding) is
+already masking. Re-run this check once the noise-parameter pathology is
+resolved (i.e.\ interior, non-bound-pinned $\sigma$ estimates), since a
+degenerate Kalman gain distorts residual whiteness independently of any
+missing input dynamics.
+
+\subsection*{Step 6 --- frequency domain cross-check} \madsen{7.3}
+
+As a complement to the time-domain CCF: the cross-spectrum
+(\S7.3) decomposes the input/output relationship by frequency. The
+\emph{phase spectrum} (\S7.3.2) gives lag as a function of frequency
+(useful if the delay itself is frequency-dependent, e.g.\ short bursts of
+heat-pump operation propagate differently than long ones), and the
+\emph{coherence spectrum} gives, per frequency, how much of the output's
+variance the input actually explains -- useful here because $\delta$ (GSHP
+on/off) is a sparse, near-impulsive signal (duty cycle $\approx 0.5\%$,
+5 transitions in 11 days) while $P_{\text{el}}$ is closer to continuous; the
+two may show up very differently in a coherence plot.
+
+\subsection*{Step 7 --- the worked example in the book} \madsen{1.1.3}
+
+Section 1.1.3, ``Heat dynamics of a building'', is the book's own example of
+grey-box RC-network modeling of a thermal system -- structurally the same
+model class used here. Worth reading directly for how the book frames
+identifiability and model-order selection for this kind of problem.
+
+\section{A caveat outside the book's scope}
+\label{sec:caveat}
+
+Steps 1--6 (and the whole of Chapter 8) implicitly assume the input is
+\emph{exogenous} -- something that happens independently of the state being
+modeled. The Step-2 result above (instantaneous, negative
+$P_{\text{el}} \to T_{\text{top}}$ correlation, versus the physically sane
+delayed positive $P_{\text{el}} \to T_{\text{bot}}$ correlation) is not
+consistent with an exogenous input at all: it is the signature of
+\emph{closed-loop} behaviour, where $P_{\text{el}}$ is itself a function of
+$T_{\text{top}}$ via the heat pump's thermostat (power ramps up when
+$T_{\text{top}}$ is low, throttles down as it recovers). This was confirmed
+directly: the heat pump's on/off command \texttt{z\_HP,air} correlates
+$0.95$ with $P_{\text{el}}$ (expected) but \emph{also} $-0.48$ with
+$T_{\text{top}}$ -- the command itself is triggered by low $T_{\text{top}}$,
+and the setpoint \texttt{T\_set,HP,air} is constant ($=0$) in this window, so
+there is no clean alternative exogenous proxy available here.
+
+Madsen's book, being a classical (largely open-loop) time series text, does
+not cover closed-loop identification (see e.g.\ Ljung, \emph{System
+Identification: Theory for the User}, for direct/indirect closed-loop
+methods). What its tools \emph{did} do is surface the problem cleanly --
+the wrong-signed, zero-lag CCF peak is exactly what closed-loop feedback
+looks like under this diagnostic. Any structural fix (modeling the
+thermostat explicitly, restricting to genuinely open-loop stretches of the
+log, or treating $T_{\text{top}}$ as a measured boundary condition rather
+than a state to be solved for) is a separate design decision, deliberately
+left open here.
+
+\section{Practical checklist}
+
+\begin{enumerate}
+\item Run Step 0 (ACF/PACF) on all four series to confirm the persistence
+  that motivates pre-whitening.
+\item Extend \texttt{scripts/diagnostics.R}'s pre-whitened CCF (already
+  covers $P_{\text{el}}$, $\dot Q_{\text{dist}}$) to $\delta$ and
+  $T_{\text{amb}}$ as well.
+\item Read off Step 3 (impulse-response shape) for whichever pairs come back
+  with a clean, physically sane sign and lag -- $T_{\text{bot}}$'s channel
+  looks like the promising one.
+\item Re-run Step 5 (residual analysis) once the model's noise parameters
+  are no longer bound-pinned, to separate genuine missing dynamics from
+  Kalman-filter noise-mismatch artifacts.
+\item Run Step 6 (coherence/phase spectrum) as a second opinion on Step 2,
+  particularly for $\delta$ given how sparse it is.
+\item Treat $P_{\text{el}}$ (and $\delta$/\texttt{z\_HP,air}) as
+  provisionally endogenous until/unless an open-loop stretch of data or an
+  explicit controller model says otherwise.
+\end{enumerate}
+
+\end{document}

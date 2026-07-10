@@ -436,6 +436,31 @@ Manifest.toml
 forecasting/Prefect Pipelines/tasks/__pycache__
 forecasting/Prefect Pipelines/fast_objects
 
+#######################################
+#                 renv                #
+#######################################
+
+# renv local library, cache, and temp files (renv.lock IS tracked)
+# Uses ** since multiple R sub-projects live under dt/, each with its own renv/
+**/renv/library/
+**/renv/local/
+**/renv/cellar/
+**/renv/lock/
+**/renv/python/
+**/renv/sandbox/
+**/renv/staging/
+**/.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+#######################################
+#                 Karno                #
+#######################################
+
+# Non-public raw data
+/dt/Karno/data/
+
 ## Acknowledgements
 # Many thanks to `https://gitignore.io/`, written and maintained by Joe Blau, which contributed much material to this gitignore file.
 
