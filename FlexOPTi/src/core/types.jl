@@ -61,7 +61,7 @@ mutable struct O
     compute_datetime::Union{String, ZonedDateTime, Nothing}
 
     # Market price parameters
-    market_country::String  # country used to look up market_id from the Trading Manager
+    market_country::Union{String, Nothing}  # country used to look up market_id from the Trading Manager
     variable_Hu::Bool       # if true, Hu shrinks to available published price slots
     tm_base_url::String     # base URL of the Trading Manager service
 end

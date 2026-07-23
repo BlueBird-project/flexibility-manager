@@ -1,6 +1,6 @@
 ## Imports
 import Pkg
-Pkg.activate(".")
+Pkg.activate(@__DIR__)
 
 using Revise
 using OhMyREPL
@@ -13,14 +13,12 @@ using Printf
 using FlexOPTi
 
 ## Test
-dt_file = joinpath("/home/kahka/DTU/BlueBird/flexmanager/FM/data/dynamics_estimator_results.json");
-sensors_file = joinpath("/home/kahka/DTU/BlueBird/flexmanager/FM/data/df_predict.json");
-forecast_file = joinpath("/home/kahka/DTU/BlueBird/flexmanager/FM/data/dynamics_estimator_results.json");
+dt_file       = joinpath(@__DIR__,"../data/montcada/inputs/dynamics_estimator_results.json");
+sensors_file  = joinpath(@__DIR__,"../data/montcada/inputs/df_predict.json");
+forecast_file = joinpath(@__DIR__,"../data/montcada/inputs/dynamics_estimator_results.json");
  
 ## optimize 
-oy = optimize(dt_file,sensors_file, forecast_file; loglevel="info", Hu = 3, name = "Montcada");
-
-
+oy = optimize(dt_file,sensors_file, forecast_file; loglevel="info", Hu = 3, pilot = "Montcada");
 
 ## debug 
 using TimeZones

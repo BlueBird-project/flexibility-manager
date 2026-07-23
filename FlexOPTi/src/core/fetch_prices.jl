@@ -206,6 +206,18 @@ If `o.variable_Hu == true`, `o.Hu` is updated in-place to the number of
 published slots available from `o.compute_datetime`.
 """
 function fetch_market_prices(o::O)::Tuple{Vector{Float64}, Symbol}
+
+    # No price specified. Using dummy
+    if o.market_country === nothing
+        dummy_price = 1.0
+        @info """No Market was selected (nothing). Using a dummy price of $(dummy_price) EUR/kWh. 
+              To use a market, try calling `optimize(...; market_country={country},...)`.
+              For example:
+                julia> FlexOPTi.optimize(dt, sensors, forecasts; market_country=\"Germany\", kwargs...)"""
+        prices_vec = fill(dummy_price, o.Hu)
+        return prices_vec, :synthetic 
+    end
+
     t0      = _resolve_t0(o.compute_datetime)
     Δt_sec  = o.Δt
 
@@ -231,7 +243,7 @@ function _resolve_t0(compute_datetime)::DateTime
     if compute_datetime isa ZonedDateTime
         return DateTime(compute_datetime, UTC)
     elseif compute_datetime isa String
-        return DateTime(compute_datetime)
+        return DateTime(ZonedDateTime(compute_datetime, Dates.DateFormat("yyyy-mm-ddTHH:MM:SSzzz")), UTC)
     else
         return now(UTC)
     end

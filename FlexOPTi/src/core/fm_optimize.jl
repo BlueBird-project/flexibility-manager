@@ -185,7 +185,7 @@ function default_code_parameter()
 	compute_datetime = now(tz"UTC") # Use current time if not specified
 
 	# Market price parameters
-	market_country = "Germany"               # resolved to market_id at query time via TM registry
+	market_country = nothing                 # resolved to market_id at query time via TM registry
 	variable_Hu    = false                   # set true to auto-size horizon to published slots
 	tm_base_url    = "http://localhost:9090" # Trading Manager service URL
 
