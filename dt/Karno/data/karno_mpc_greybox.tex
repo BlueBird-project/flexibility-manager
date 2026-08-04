@@ -1,0 +1,841 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- packages ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{geometry}
+\geometry{margin=2.4cm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=blue,urlcolor=blue]{hyperref}
+
+% ---------- operators / macros ----------
+\DeclareMathOperator{\sat}{sat}
+\newcommand{\COP}{\mathrm{COP}}
+\newcommand{\Qmax}{\dot{Q}_{\max}}
+\newcommand{\Ttop}{T_{\mathrm{top}}}
+\newcommand{\Tbot}{T_{\mathrm{bot}}}
+\newcommand{\Ths}{T_{hs}}          % HP supply  (condenser outlet)
+\newcommand{\Thr}{T_{hr}}          % HP return  (condenser inlet)
+\newcommand{\Tsp}{T_{\mathrm{sp}}} % HP leaving-water setpoint (the control)
+\newcommand{\Tair}{T_{\mathrm{air}}}
+\newcommand{\Tamb}{T_{\mathrm{amb}}}
+\newcommand{\Tretd}{T_{\mathrm{ret},d}}
+\newcommand{\Tsd}{T_{s,d}}         % delivered district supply temp
+\newcommand{\Tsdref}{T_{s,d}^{\star}}
+\newcommand{\mh}{\dot m_h}         % HP condenser-loop flow
+\newcommand{\md}{\dot m_d}         % district draw flow
+\newcommand{\Qhp}{Q_{\mathrm{hp}}}
+\newcommand{\Pel}{P_{\mathrm{el}}}
+\newcommand{\Vtop}{V_{\mathrm{top}}}
+\newcommand{\cw}{c}                % specific heat of water
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{Grey-box Model of the Profondeville Energy Center\\for Demand-Response MPC}}
+\author{Karno / Profondeville (K-0001)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note derives a control-oriented grey-box model of the Profondeville district
+heating energy center, for the purpose of a demand-response (DR) model predictive
+controller (MPC) driven by electricity price, PV production and a district
+consumption forecast. The physical boundary of the model is the \emph{supply
+temperature to the district}; the apartments are not modelled. The controllable
+subsystem consists of the air-source heat pump (ASHP, modulating), the geothermal
+heat pump (GSHP, on/off) and the distribution 3-way mixing valve. We present (i) a
+detailed plant model suitable for system identification, keeping the two internal
+PID loops explicit, and (ii) a reduced model suitable for online optimisation, in
+which the PID loops collapse into algebraic set-point tracking plus feasibility
+constraints. A single continuous input (the ASHP) and a single storage state (the
+buffer tank) are sufficient for a first controller; the geothermal on/off unit and
+a stratification (thermocline) state are documented as upgrades.
+\end{abstract}
+
+\tableofcontents
+
+% ==================================================================
+\section{System and modelling scope}
+% ==================================================================
+
+In winter the energy center produces hot water into a \SI{2.5}{m^3} buffer tank,
+charged by two heat pumps, and feeds a district network whose supply temperature is
+regulated by a 3-way mixing valve. The relevant energy flows are:
+
+\begin{itemize}[nosep]
+  \item \textbf{ASHP} (air source, $\sim$\SI{20}{kW}): inverter-\emph{modulating},
+        $0$--$100\,\%$. Its onboard controller regulates the leaving-water
+        temperature to a set-point. This is the primary continuous actuator.
+  \item \textbf{GSHP} (ground source, $\sim$\SI{40}{kW}): \emph{on/off} only.
+        Treated in v1 either as off or as a measured exogenous heat input.
+  \item \textbf{Buffer tank} (\SI{2.5}{m^3}): the thermal storage that provides
+        the demand-response flexibility.
+  \item \textbf{3-way valve} (\code{FCV\_702}): blends hot tank water with the
+        warm district return to hold the district supply temperature on a
+        weather-compensated heating curve.
+\end{itemize}
+
+\paragraph{Measurement reality (design constraint).}
+Water \emph{flows} and \emph{heat meters} on the heat-pump loops are \emph{not}
+currently instrumented and are assumed unavailable. Only temperatures, valve/pump
+positions, the district flow \code{FQT\_701\_OUT}, and heat-pump \emph{electrical}
+power are measured. The model is therefore built so that all unmeasured flows are
+absorbed into identifiable parameters, and the heat-pump heat input is inferred
+from measured electrical power.
+
+\paragraph{Control architecture (cascade).}
+The MPC does not command power directly. It commands a \emph{set-point}; the
+electrical power and the delivered heat are \emph{responses} of the heat pump:
+\begin{equation}
+  \underbrace{u=\Tsp\ (+\,\text{enable }\delta)}_{\text{MPC decision}}
+  \;\xrightarrow{\ \text{HP map}\ }\;
+  (\Pel,\ \Qhp)
+  \;\xrightarrow{\ \text{tank}\ }\;
+  (\Ttop,\Tbot)
+  \;\xrightarrow{\ \text{valve}\ }\;
+  \Tsd .
+\end{equation}
+
+% ==================================================================
+\section{Nomenclature and measured signals}
+% ==================================================================
+
+\renewcommand{\arraystretch}{1.15}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}l l l l@{}}
+\toprule
+Symbol & Meaning & Unit & BigQuery column \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{States}}\\
+$\Ttop$ & Tank top temperature & \si{\celsius} & \code{TT\_601} \\
+$\Tbot$ & Tank bottom temperature & \si{\celsius} & \code{TT\_602} \\
+$\Ths$  & ASHP supply (condenser outlet) & \si{\celsius} & \code{PAC\_501\_T\_OUT\_EAU\_ECHANGEUR} \\
+$\Thr$  & ASHP return (condenser inlet)  & \si{\celsius} & \code{PAC\_501\_T\_IN\_EAU\_ECHANGEUR} \\
+$\Vtop$ & Hot-zone volume (optional, thermocline) & \si{m^3} & --- (observer) \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Control inputs}}\\
+$\Tsp$  & ASHP leaving-water set-point & \si{\celsius} & \code{PAC\_501\_CONSIGNE\_ACTUEL} \\
+$\delta$ & ASHP enable (on/off) & --- & \code{PAC\_501\_RUN}/\code{\_LIBERATION} \\
+$\theta$ & 3-way valve position & --- & \code{FCV\_702\_POSITION} \\
+$\delta_g$ & GSHP enable (v1.5) & --- & \code{PAC\_301\_RUN} \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Measured disturbances / forecasts}}\\
+$\Tair$ & Outdoor air temperature & \si{\celsius} & \code{TT\_Text} \\
+$Q_{\mathrm{dist}}$ & District heat load (forecast; tank driver) & \si{kW} & forecast / $\md\cw\Delta T$ \\
+$\md$   & District draw flow (historical only) & \si{m^3/h} & \code{FQT\_701\_OUT} \\
+$\Tretd$& District return temperature & \si{\celsius} & \code{TT\_702} \\
+$\Tamb$ & Plant-room ambient temperature & \si{\celsius} & (assumed / const) \\
+$\lambda(t)$ & Electricity price & \si{EUR/kWh} & external \\
+$\mathrm{PV}(t)$ & PV production / forecast & \si{kW} & external \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Measured outputs}}\\
+$\Pel$  & ASHP electrical power & \si{kW} & \code{PAC\_501\_PUISSANCE} / \code{EM\_PAC\_501\_PWR\_TOT\_P} \\
+$\Tsd$  & District supply temperature & \si{\celsius} & \code{TT\_701} \\
+\bottomrule
+\end{tabular}
+\caption{Model variables and the logged signals they map to. All parameters
+($C_\bullet, \kappa, UA_\bullet, \alpha, \beta,\dots$) are identified; unmeasured
+flows are folded into them.}
+\end{table}
+
+Constants: $\cw$ = specific heat of water (\si{kJ/(kg.K)}), $\rho$ = density.
+Flows are expressed as mass flows $\dot m = \rho\,\dot V$.
+
+% ==================================================================
+\section{Heat-pump model (ASHP)}
+% ==================================================================
+
+\subsection{Internal set-point-tracking loop (PID $\to$ modulation)}
+The inverter modulates the compressor, $m\in[0,1]$, to drive the leaving-water
+temperature $\Ths$ to its set-point $\Tsp$. This is the first of the two internal
+PID loops:
+\begin{align}
+  e(t) &= \Tsp(t) - \Ths(t), \\
+  m(t) &= \sat_{[0,1]}\!\Big( K_p\,e(t) + K_i\!\int_0^t e(\tau)\,\mathrm d\tau \Big).
+  \label{eq:hp-pid}
+\end{align}
+
+\begin{quote}\small\itshape
+The gains $K_p,K_i$ are \textbf{not identified}. Equation~\eqref{eq:hp-pid} is
+documentation of the onboard controller, not a block that is fitted. The data
+already contains this loop's \emph{output}: the modulation, $\Pel$ and $\Ths$ are
+all logged. For identification (\S\ref{sec:sysid}) we regress on those measured
+signals; for control (\S\ref{sec:mpc}) we collapse the loop to $\Ths=\Tsp$. The
+gains enter neither.
+\end{quote}
+The modulation delivers thermal power to the condenser water, capped by the
+air-temperature-dependent capacity ceiling:
+\begin{equation}
+  \Qhp(t) = m(t)\,\Qmax\!\big(\Tair(t)\big), \qquad
+  \Qmax(\Tair) \approx a_0 + a_1\,\Tair .
+  \label{eq:qhp}
+\end{equation}
+
+\subsection{Electrical power and COP}
+The electrical power (the quantity multiplied by price) follows from the coefficient
+of performance, which decreases with lift (sink temperature $\Ths$ up, source
+temperature $\Tair$ down):
+\begin{equation}
+  \Pel(t) = \frac{\Qhp(t)}{\COP\big(\Tair,\Ths\big)}.
+  \label{eq:pel}
+\end{equation}
+Two identifiable COP forms:
+\begin{equation}
+  \text{(Carnot-scaled)}\quad
+  \COP = \eta\,\frac{\Ths+273.15}{\Ths-\Tair+\Delta T_{\text{pp}}},
+  \qquad
+  \text{(affine)}\quad
+  \COP = b_0 + b_1\Tair + b_2\Ths .
+  \label{eq:cop}
+\end{equation}
+Since $\Pel,\Tair,\Ths$ are all measured, \eqref{eq:pel}--\eqref{eq:cop} are fit by
+regression on historical data. This is the only place nonlinearity enters the cost;
+Section~\ref{sec:mpc} discusses convex handling.
+
+\subsection{Condenser-loop dynamics (optional refinement)}
+The heat-pump water loop draws from the tank bottom, is heated in the condenser and
+returns to the tank top. The condenser circulator is \emph{fixed-speed}, so the loop
+flow $\mh$ is a \textbf{single unknown constant}, not a signal. With loop thermal
+capacitance $C_h$:
+\begin{align}
+  C_h\,\dot{\Ths} &= \Qhp - \mh\,\cw\,(\Ths-\Thr), \label{eq:ths}\\
+  \tau_r\,\dot{\Thr} &= \Tbot - \Thr. \label{eq:thr}
+\end{align}
+Equation~\eqref{eq:thr} is a first-order lag capturing pipe/mixing transport from
+the tank bottom to the condenser inlet; in the fast limit $\Thr\to\Tbot$.
+
+\begin{quote}\small\itshape
+On the unknown flow $\mh$. It is never needed in physical units. (i) In
+\eqref{eq:ths} it only appears as the ratio $\mh\cw/C_h$, one lumped coefficient
+identified from the $\Ths$ transient. (ii) For the \emph{heat delivered to the
+tank} we do not use \eqref{eq:ths} at all: we take it from the measured electrical
+power, $\Qhp=\alpha\,\Pel$ (\S\ref{sec:tank}). Consequently the tank model below
+contains no $\mh$: the flow's only remaining footprint is the recirculation
+\emph{stirring} it causes, which lumps into a single mixing coefficient $\kappa$.
+This condenser-loop block is therefore an \emph{optional} refinement; the reduced
+model drops it entirely.
+\end{quote}
+
+% ==================================================================
+\section{Geothermal heat pump (GSHP)}
+\label{sec:gshp}
+% ==================================================================
+
+The GSHP ($\sim$\SI{40}{kW}) is \textbf{on/off only} and, in the present operation,
+its start/stop is decided by the existing plant logic --- it is \emph{not} an MPC
+decision variable in v1. It must nevertheless be modelled, for one reason: to fit
+the tank on data segments where the GSHP was running, its heat input has to be
+accounted for, otherwise the identifier attributes the GSHP's charging to the ASHP
+or to the tank parameters and the fit is corrupted.
+
+Because the ground-source temperature is nearly constant across a heating season,
+the on-state heat output is essentially constant. The model is therefore a switched
+constant source, or --- preferred, since it is faithful and needs no COP assumption
+--- the \emph{measured} electrical power scaled by an identified proxy:
+\begin{equation}
+  Q_{\mathrm{gshp}}(t) =
+  \begin{cases}
+    \alpha_g\,P_{\mathrm{el},g}(t) & \text{(measured-power form, preferred)},\\[2pt]
+    \delta_g(t)\,\bar Q_{\mathrm{gshp}} & \text{(switched-constant form)},
+  \end{cases}
+  \label{eq:gshp}
+\end{equation}
+with $\delta_g\in\{0,1\}$ the on/off state (\code{PAC\_301\_RUN}),
+$P_{\mathrm{el},g}$ its electrical power (\code{EM\_PAC\_301\_PWR\_TOT\_P} /
+\code{PAC\_301\_PUISSANCE}), and $\alpha_g$ or $\bar Q_{\mathrm{gshp}}$ identified.
+This term enters the tank top node in \eqref{eq:ttop} exactly like the ASHP heat.
+Structurally the two heat pumps are identical inputs to the tank; the difference is
+only that $\Tsp$ (ASHP) is a decision variable whereas $\delta_g$ (GSHP) is, for
+now, an exogenous \emph{measured disturbance}. If the GSHP is later added to the
+controller, \eqref{eq:gshp} is already the required model (a binary control with a
+constant heat quantum) --- no re-identification needed.
+
+% ==================================================================
+\section{Buffer-tank model}
+\label{sec:tank}
+% ==================================================================
+
+\subsection{Heat inputs (measured, no HP flow needed)}
+Both heat pumps charge the \emph{same} tank. Their heat inputs are taken from the
+measured electrical powers, so the tank model contains no heat-pump flow:
+\begin{equation}
+  \Qhp = \alpha\,\Pel \quad(\text{ASHP}), \qquad
+  Q_{\mathrm{gshp}} = \alpha_g\,P_{\mathrm{el},g}\quad(\text{GSHP, \S\ref{sec:gshp}}),
+  \label{eq:heatin}
+\end{equation}
+with efficiency-proxy constants $\alpha,\alpha_g$ (identified). Both inject into the
+top node.
+
+\subsection{Two-node stratified model (v1)}
+The tank is discretised into a top node ($\Ttop$) and a bottom node ($\Tbot$) of
+fixed volumes. The district acts as a \emph{heat sink}: hot water is withdrawn from
+the top and returns cold to the bottom, removing heat at the rate
+$Q_{\mathrm{dist}}$. We drive the tank with this \emph{forecasted heat} directly
+rather than with the draw flow $\md$, because the demand is forecast as a load (kW),
+not a flow, and reconstructing $\md\,\cw\,\Delta T$ only to collapse it back to a heat
+is needless --- the useful product is the heat. Since extraction is from the top, the
+load lands on the top node, and with the district return sitting near the bottom node
+($\Tretd\approx\Tbot$) the whole draw
+$\md\,\cw(\Ttop-\Tbot)\approx\md\,\cw(\Ttop-\Tretd)=Q_{\mathrm{dist}}$ collapses onto
+it. A single factor $\beta$ carries any constant mismatch between the forecast
+boundary and this tank's outlet (network/standing losses, metering point, a shared
+manifold); $\beta\approx1$ when $Q_{\mathrm{dist}}$ is the tank-outlet heat meter. The
+heat pumps enter as the heat terms \eqref{eq:heatin}; their recirculation, conduction,
+and the flow-driven inter-node transport appear as one mixing coefficient $\kappa$.
+The node energy balances are:
+\begin{align}
+  C_{\mathrm{top}}\,\dot{\Ttop} =\;&
+    \Qhp + Q_{\mathrm{gshp}}
+    - \beta\,Q_{\mathrm{dist}}
+    - \kappa\,(\Ttop-\Tbot)
+    - UA_t\,(\Ttop-\Tamb), \label{eq:ttop}\\[2pt]
+  C_{\mathrm{bot}}\,\dot{\Tbot} =\;&
+    \kappa\,(\Ttop-\Tbot)
+    - UA_b\,(\Tbot-\Tamb). \label{eq:tbot}
+\end{align}
+The whole tank then loses exactly $\beta\,Q_{\mathrm{dist}}$ to the district (plus the
+standing losses), which is energy-consistent by construction. Here $\kappa$ (W/K) is
+the mixing/conduction coefficient --- it absorbs the fixed-speed HP recirculation and
+the flow-driven transport, and produces the gradual $\Ttop$ droop of a non-ideal tank
+--- and $UA_t,UA_b$ are standing-loss coefficients. \textbf{Identified parameters:}
+$C_{\mathrm{top}},C_{\mathrm{bot}},\kappa,UA_t,UA_b,\alpha,\alpha_g,\beta$; the tank
+capacitances are anchored near their geometric values $\rho V_\bullet\cw$ (the buffer
+volume is known), which keeps $\beta$ from trading off against $C_{\mathrm{top}}$.
+\emph{No heat-pump flow $\mh$ appears.}
+
+\emph{Bottom-node anchor.} Dropping the explicit cold-return term removes the bottom
+node's cold source, so $\Tbot$ can drift slightly warm via $\kappa$. If the bottom
+fit matters, retain the measured return as a weak pull $-\,\gamma\,(\Tbot-\Tretd)$ in
+\eqref{eq:tbot} ($\Tretd=\code{TT\_702}$, a measured input); for the top-node dynamics
+that drive supply and DR it is immaterial.
+
+\paragraph{Opposite-curvature diagnostic (when is two-node enough?).}
+The fixed volumes $C_{\mathrm{top}},C_{\mathrm{bot}}$ are the modelling
+approximation: physically the stored energy lives in a \emph{hot volume} and a
+\emph{cold volume} whose boundary (the thermocline) moves, so charge/discharge is
+really a change of \emph{volume} at nearly constant temperatures. Freezing the
+volumes forces that volume motion to be re-expressed as a \emph{temperature} change
+of fixed nodes; the coefficient $\kappa$ is the artifact that absorbs it. This
+substitution has a characteristic signature in the discharge shape of $\Ttop$:
+\begin{itemize}[nosep]
+  \item \textbf{Two-node model:} $\Ttop$ relaxes \emph{exponentially} toward
+        $\Tbot$ --- fastest drop first, then tapering (convex, decreasing slope).
+  \item \textbf{Real moving thermocline:} $\Ttop$ holds a \emph{plateau} while the
+        front is below the sensor, then drops sharply when it arrives (concave,
+        flat-then-steep).
+\end{itemize}
+These are \emph{opposite curvatures}. Hence an observed ``flat for a while, then
+lower'' discharge is the thermocline signature and the regime the two-node model is
+structurally worst at. Use this as a quantitative trigger: fit the two-node model
+first and inspect its residuals around the deepest discharges. If the model
+consistently \emph{leads} the data --- $\Ttop$ predicted to droop while the
+measurement is still on its plateau, then catching up after the real cliff --- the
+knee is too sharp for two nodes and the $\Vtop$ thermocline state
+(\S\ref{sec:vtop}) is required. For a DR controller this residual pattern is not
+cosmetic: it means the model under-predicts available flexibility on the plateau
+and then over-predicts it past the cliff, i.e.\ it mistimes exactly the moment the
+tank runs out. A gentle knee (soft plateau, mild drop) stays inside the two-node
+regime and $\kappa$ can absorb it.
+
+\paragraph{Validity.}
+A two-node model reproduces a \emph{smooth} $\Ttop$ decay during discharge
+\emph{by construction}: it cannot represent a sharp thermocline sweeping past the
+sensor. It is therefore valid only in the regime where the real tank actually
+de-stratifies smoothly. This should be checked on the deepest observed discharges;
+where $\Ttop$ instead drops abruptly (a ``cliff''), use the thermocline state below.
+
+\subsection{Thermocline state (v1.5, optional)}
+\label{sec:vtop}
+The point sensors $\Ttop,\Tbot$ sit near the tank ends. Their value is not the
+usable stored energy: a thin hot layer over a large cold volume stores little.
+Introduce the \emph{hot-zone volume} $\Vtop$ (position of the thermocline). Because
+the HP loop is not flow-metered, its \emph{volumetric} charging rate is recovered
+from the measured \emph{electrical} power via the heat balance:
+\begin{equation}
+  \dot V_{\text{charge}}
+  = \frac{\Qhp}{\rho\,\cw\,(\Ttop-\Tbot)}
+  = \frac{\alpha\,\Pel}{\rho\,\cw\,(\Ttop-\Tbot)},
+  \qquad \Qhp \approx \alpha\,\Pel,
+  \label{eq:vcharge}
+\end{equation}
+while the discharge draws hot water from the top at the measured district flow times
+the fraction pulled from the tank by the valve, $g(\theta)$:
+\begin{equation}
+  \boxed{\;
+  \dot{\Vtop} = \frac{\alpha\,\Pel}{\rho\,\cw\,(\Ttop-\Tbot)}
+              - \md\,g(\theta)\; }
+  \label{eq:vtop}
+\end{equation}
+Equation~\eqref{eq:vtop} degenerates as $\Ttop-\Tbot\to0$ (no distinct thermocline);
+clamp/freeze $\Vtop$ below a $\Delta T$ threshold.
+
+\paragraph{Observability of $\Vtop$ from point sensors.}
+$\Vtop$ is \emph{not} continuously measured, but it is partially observed as a
+\emph{threshold event}: while the thermocline is below the top sensor, $\Ttop$
+saturates at the hot value ($\Vtop \ge V_{\text{sensor}}$, exact value unknown);
+the instant $\Ttop$ drops is a hard fix that the front has reached the sensor
+height. This yields a predict/correct observer:
+\begin{align}
+  \text{predict:}\quad & \dot{\Vtop}\ \text{by }\eqref{eq:vtop}\ \text{(open-loop integration)},\\
+  \text{correct:}\quad & \Vtop \leftarrow V_{\text{sensor}}\ \text{when a }\Ttop\ \text{(or }\Tbot\text{) crossing is detected.}
+\end{align}
+Between the two end-sensors the state is unobserved and relies on the integration;
+the crossings cancel its drift.
+
+% ==================================================================
+\section{Distribution valve and heating curve}
+\label{sec:valve}
+% ==================================================================
+
+The 3-way valve blends tank-top water with the district return to deliver the
+supply temperature:
+\begin{equation}
+  \Tsd = \theta\,\Ttop + (1-\theta)\,\Tretd, \qquad \theta\in[0,1]. \label{eq:blend}
+\end{equation}
+A second internal PID drives $\theta$ so that $\Tsd\to\Tsdref$. \textbf{We do not
+model this PID and do not identify its gains}: the valve is not a demand-response
+actuator (it is absent from the MPC decision variables in \eqref{eq:obj}), so its
+dynamics are irrelevant to the flexibility problem. The \emph{only} thing this loop
+contributes to our model is its steady-state result --- the algebraic feasibility
+constraint \eqref{eq:feasibility} --- because whenever the tank is hot enough the
+valve holds $\Tsd=\Tsdref$ exactly, and when it is not the valve saturates. That is
+all the MPC needs from the valve.
+
+The set-point $\Tsdref$ is the weather-compensated heating curve (encoded in the
+winter scenario, columns \code{MODE\_HIV\_ConsigneSupplyIfTempExt*Param}); a
+two-level day/night form is
+\begin{equation}
+  \Tsdref(\Tair) =
+  \begin{cases}
+    T_{\text{cold}}, & \Tair < \bar T - \tfrac{\Delta}{2},\\
+    T_{\text{mild}}, & \Tair > \bar T + \tfrac{\Delta}{2},
+  \end{cases}
+  \label{eq:heatcurve}
+\end{equation}
+with switch threshold $\bar T$ (\code{MODE\_HIV\_paramTemperatureExt}) and hysteresis
+$\Delta$ (\code{paramOffsetTempExt}).
+
+\paragraph{Feasibility (the key coupling).}
+Blending \eqref{eq:blend} can only \emph{raise} the return toward $\Ttop$; the
+valve saturates at $\theta=1$ once $\Ttop=\Tsdref$. Hence the deliverable-supply
+constraint
+\begin{equation}
+  \Tsd = \Tsdref \iff \Ttop \ge \Tsdref(\Tair).
+  \label{eq:feasibility}
+\end{equation}
+The right-hand inequality is the \emph{floor} of the usable storage: once $\Ttop$
+falls to $\Tsdref$, flexibility is exhausted and the heat pumps must recharge.
+
+% ==================================================================
+\section{Reduced model and MPC formulation}
+\label{sec:mpc}
+% ==================================================================
+
+\subsection{Collapsing the PID loops}
+The low-level PIDs (HP loop \eqref{eq:hp-pid} and the valve loop of \S\ref{sec:valve}) are not re-optimised
+by the MPC. On the MPC time step they are assumed to reach their set-points whenever
+physically feasible, which replaces the fast dynamics by algebraic relations plus
+saturation limits:
+\begin{align}
+  \Ths &= \Tsp & &\text{while } m<1 \ \ (\Qhp<\Qmax(\Tair)), \label{eq:collapse1}\\
+  \Tsd &= \Tsdref(\Tair) & &\text{while } \Ttop\ge \Tsdref(\Tair). \label{eq:collapse2}
+\end{align}
+The heat-pump heat input, expressed directly from the decision variable (needed
+because in a forward prediction $\Pel$ is an output, not yet known):
+\begin{equation}
+  \Qhp = \min\!\Big(\ G_h\,(\Tsp-\Tbot),\ \ \Qmax(\Tair)\ \Big),
+  \qquad G_h \equiv \mh\,\cw,
+  \label{eq:qhp-red}
+\end{equation}
+where $G_h$ (W/K) is the \emph{single lumped condenser conductance} of
+\S\ref{sec:tank}: the unknown fixed pump flow times $\cw$, identified as one
+constant. The two limbs are the compressor working ($\Ths=\Tsp$) and the
+compressor saturated at full modulation.
+
+\subsection{Reduced dynamics}
+Dropping the fast condenser states \eqref{eq:ths}--\eqref{eq:thr}, the control model
+keeps the two tank states (optionally $\Vtop$):
+\begin{align}
+  C_{\mathrm{top}}\,\dot{\Ttop} &=
+     \Qhp + Q_{\mathrm{gshp}} - \beta\,Q_{\mathrm{dist}} - \kappa(\Ttop-\Tbot) - UA_t(\Ttop-\Tamb), \label{eq:red-top}\\
+  C_{\mathrm{bot}}\,\dot{\Tbot} &=
+     \kappa(\Ttop-\Tbot) - UA_b(\Tbot-\Tamb), \label{eq:red-bot}\\
+  \Pel &= \Qhp\,/\,\COP(\Tair,\Tsp). \label{eq:red-pel}
+\end{align}
+
+\subsection{Constraints (where the PID logic becomes explicit)}
+\begin{align}
+  \Ttop &\ge \Tsdref(\Tair) && \text{valve saturation} \eqref{eq:feasibility}: \text{DR floor},\\
+  \Ttop &\le T_{\max} && \text{tank ceiling},\\
+  \Qhp &\le \Qmax(\Tair) && \text{compressor saturation } (m=1),\\
+  \Tsp &\in [\Tsp^{\min},\Tsp^{\max}], \quad \delta\in\{0,1\} && \text{actuator limits}.
+\end{align}
+
+\subsection{Objective}
+Minimise energy cost net of PV self-consumption over the horizon $H$:
+\begin{equation}
+  \min_{\{\Tsp(t),\,\delta(t)\}}\ \int_{0}^{H}
+    \Big[\ \lambda(t)\,\Pel(t) \;-\; c_{\text{pv}}\,\min\!\big(\Pel(t),\mathrm{PV}(t)\big)\ \Big]\,\mathrm dt .
+  \label{eq:obj}
+\end{equation}
+
+\subsection{Convexity note}
+The plant is nonconvex (bilinear tank advection; $\Pel=\Qhp/\COP$). Two routes:
+\begin{enumerate}[nosep]
+  \item \textbf{Nonlinear MPC:} solve \eqref{eq:red-top}--\eqref{eq:obj} directly
+        as an NLP (e.g.\ CasADi + IPOPT). Recommended for the first closed loop.
+  \item \textbf{Convex approximation:} freeze the COP on the \emph{forecast}
+        exogenous signals, $\COP(t)=\COP(\Tair(t),\Tsdref(t))$, so the cost
+        $\lambda(t)/\COP(t)\cdot\Qhp$ becomes linear in $\Qhp$; with a fixed-node
+        tank \eqref{eq:red-top}--\eqref{eq:red-bot} the problem is an LP/QP. This
+        ignores the efficiency penalty of charging hotter, to be reintroduced by
+        piecewise-linear COP later.
+\end{enumerate}
+
+% ==================================================================
+\section{System identification with \texttt{ctsmTMB}}
+\label{sec:sysid}
+% ==================================================================
+
+Identification is carried out with \texttt{ctsmTMB} (continuous--discrete
+stochastic state-space models; maximum likelihood via an extended/unscented Kalman
+filter). The model is a set of It\^o SDEs for the states plus discrete observation
+equations for the sensors:
+\begin{align}
+  \mathrm d x &= f(x,u,t;\theta)\,\mathrm dt + \sigma(\theta)\,\mathrm d\omega,
+  & &\text{(system, process noise $\omega$)} \label{eq:sde}\\
+  y_k &= h(x_k,u_k;\theta) + e_k, \quad e_k\sim\mathcal N(0,\Sigma_e),
+  & &\text{(observation, measurement noise)} \label{eq:obs}
+\end{align}
+and $\theta$ is estimated by maximising the Kalman-filter likelihood. The process
+noise term is the reason to prefer this over plain least squares: it lets the
+filter absorb the \emph{structural} error of the model (e.g.\ the thermocline
+approximation of \S\ref{sec:tank}) instead of biasing the parameters into it.
+
+\subsection{The reframing: the heat pumps enter as measured inputs, not maps}
+The apparent obstacle is that the ``HP static map'' \eqref{eq:qhp}--\eqref{eq:cop}
+is nonlinear, and $\Qhp$ is unmeasured. Both dissolve once one observes that
+\textbf{during identification the electrical power is logged, not predicted}. We
+never turn a set-point into power here; the machine already did that, and the
+result is the measured column $\Pel$. Hence the heat pumps enter the tank SDE as
+\emph{measured inputs} scaled by one constant each:
+\begin{equation}
+  \Qhp(t)=\alpha\,\underbrace{\Pel(t)}_{\text{input}}, \qquad
+  Q_{\mathrm{gshp}}(t)=\alpha_g\,\underbrace{P_{\mathrm{el},g}(t)}_{\text{input}} .
+  \label{eq:heat-inputs}
+\end{equation}
+There is no $\Qmax$, no $\sat$, no COP curve in the identification model: all of
+that is already baked into the measured $\Pel$. The parameters $\alpha,\alpha_g$
+\emph{are} the effective COPs, and the tank temperatures respond in proportion to
+the injected heat, so they are identifiable. \emph{The internal PID gains
+$K_p,K_i$ never appear} --- the loop's output ($\Pel,\Ths$) is measured.
+
+\subsection{Closed-loop caveat: the ASHP enable signal is generated by \texorpdfstring{$\Ttop$}{Ttop}}
+\label{sec:closedloop}
+
+Section~\ref{sec:sysid}.1 treats $\Pel$ (and, by extension, $\delta$) as a
+\emph{measured input} to be fed into the tank SDE without further comment. On
+the K-0001 data this needs a caveat: the existing (pre-MPC) plant logic that
+generated the historical $\delta,\Pel$ record is not free/exogenous, it is a
+\textbf{feedback law on $\Ttop$ itself} --- a Schmitt-trigger (hysteresis)
+relay,
+\begin{equation}
+  \delta(t) =
+  \begin{cases}
+    1 & \Ttop(t) \text{ crosses below } \SI{31}{\celsius}\ \text{(enable)},\\
+    0 & \Ttop(t) \text{ crosses above } \SI{35}{\celsius}\ \text{(disable)},\\
+    \delta(t^-) & \text{otherwise (inside the hysteresis band)}.
+  \end{cases}
+  \label{eq:enable-law}
+\end{equation}
+
+\paragraph{Empirical evidence (11-day window, 2026-05-13 to 2026-05-24, 5 min sampling).}
+\begin{itemize}[nosep]
+  \item Raw correlation $\mathrm{corr}(\Pel,\Ttop) = -0.57$ --- the wrong sign
+        for a term meant to \emph{heat} $\Ttop$.
+  \item Pre-whitened cross-correlation (AR(20) prewhitening, Box--Jenkins):
+        peak $\Pel\!\to\!\Ttop$ correlation is at \textbf{lag 0}, $r=-0.39$
+        (instantaneous, negative --- not the delayed positive response direct
+        heating would produce). By contrast $\Pel\!\to\!\Tbot$ peaks at lag
+        $+1$ sample ($+5$ min), $r=+0.30$: small positive delay, correct sign,
+        consistent with $\Tbot$ being a passive receiver of whatever heat is
+        actually added.
+  \item $\delta$ (\code{PAC\_501\_RUN}) correlates $0.95$ with $\Pel$
+        (expected: same event) but \emph{also} $-0.48$ with $\Ttop$ --- the
+        enable command itself is triggered by low $\Ttop$, so it carries the
+        same endogeneity as $\Pel$.
+  \item $\Tsp$ (\code{PAC\_501\_CONSIGNE\_ACTUEL} / logged as
+        \code{T\_set,HP,air}) is \textbf{constant} within this window --- a
+        two-level seasonal flag over the full $\sim$2.7-year log, not
+        something varied independently for identification purposes. No clean
+        exogenous proxy is available in the historical record.
+\end{itemize}
+
+\begin{quote}\small\itshape
+Why this matters for Stage~1. The Kalman-filter MLE in \eqref{eq:sde}--\eqref{eq:obs}
+implicitly treats the input trajectory as independent of the process noise
+driving the state. When $\delta$ (and hence $\Pel$) is actually generated by
+\eqref{eq:enable-law} --- a function of $\Ttop$, the very state being
+estimated --- that independence fails, and the estimator can no longer tell
+``the plant responds this way to heat'' apart from ``the old controller reacts
+this way to temperature.'' A preliminary two-node fit on this data (constant
+$\bar Q_{\mathrm{gshp}}$, $\delta$ and $\Pel$ used as raw measured inputs
+exactly as in \eqref{eq:heat-inputs}) showed the signature of this: $C_{\mathrm{top}}$,
+$C_{\mathrm{bot}}$, $\kappa$ and $\alpha$ all pinning at whatever bound they
+were given rather than converging, and the two channels' noise parameters
+($\sigma_{y_1}$ vs.\ $\sigma_{y_2}$) splitting to opposite bounds --- one
+channel's noise absorbing the mismatch instead of a real fit.
+
+Direct closed-loop identification (fitting the plant on closed-loop data,
+input treated as given) is not automatically wrong --- it is provably
+consistent under prediction-error methods \emph{provided} the model structure
+is correct and the noise is correctly specified (Ljung, \emph{System
+Identification: Theory for the User}). The practical reading here: closed-loop
+data is much less forgiving of structural misspecification (wrong injection
+node, missing dynamics, oversimplified coupling) than open-loop data, because
+feedback narrows the input's information content and concentrates any
+structural error into biased parameter estimates rather than averaging it out.
+\end{quote}
+
+\paragraph{Fix: fold the known switching law into the SDE.}
+Because \eqref{eq:enable-law} is fully specified (even though the in-band
+modulation level is not), it should be written \emph{into} the state equation
+rather than passed in as an external regressor whose relationship to $\Ttop$
+the estimator is left to (mis)discover on its own:
+\begin{equation}
+  \mathrm d\Ttop = \tfrac{1}{C_{\mathrm{top}}}\Big[
+      \bar P_{\mathrm{HP}}\,\delta(t) + \bar Q_{\mathrm{gshp}}\delta_g
+      - \beta Q_{\mathrm{dist}} - \kappa(\Ttop-\Tbot) - UA_t(\Ttop-\Tamb)\Big]\mathrm dt
+      + \sigma_t\,\mathrm d\omega_t,
+  \label{eq:sde-top-switched}
+\end{equation}
+with $\delta(t)$ given by \eqref{eq:enable-law} (a state-dependent hysteresis
+switch, structurally identical to how $\delta_g$ already enters via
+$\bar Q_{\mathrm{gshp}}\delta_g$ in \S\ref{sec:gshp}) rather than the
+free-floating $\alpha\Pel$ term of \eqref{eq:heat-inputs}. The only unknown
+left in the ASHP term is $\bar P_{\mathrm{HP}}$, the effective heat rate while
+enabled --- once the \emph{timing} ambiguity is removed by the known law, the
+\emph{level} becomes a well-posed, identifiable parameter again, estimated
+directly from how fast $\Ttop$ rises during each known-enabled stretch.
+
+\paragraph{Caveats.}
+\begin{enumerate}[nosep]
+  \item This only identifies the dynamics \emph{within the operating band the
+        thermostat has actually visited} (roughly \SIrange{31}{35}{\celsius},
+        plus the transients into/out of it). It says nothing about the tank's
+        response to conditions the old controller never explored --- which
+        matters once the MPC starts commanding $\Tsp$ outside that band. A
+        short designed identification test (step changes or a simple dithered
+        sequence directly on $\Tsp$, independent of $\Ttop$) remains the clean
+        long-term fix, and is required before trusting the model much beyond
+        \SIrange{31}{35}{\celsius}.
+  \item $\bar P_{\mathrm{HP}}$ is an \emph{average} effective rate over each
+        enabled stretch. If the true in-band modulation depends on more than
+        just enabled/disabled (e.g.\ how far below \SI{31}{\celsius} the
+        stretch started, or ramp-up dynamics), that is extra structure not
+        captured by \eqref{eq:enable-law} alone --- it only pins down
+        \emph{when} the pump runs, not \emph{how hard}.
+\end{enumerate}
+
+\subsection{Stage 1 --- tank dynamics (both heat pumps together)}
+Two states $x=[\Ttop,\Tbot]$, driven by the tank balances of \S\ref{sec:tank}
+promoted to SDEs by adding a process-noise term to each:
+\begin{align}
+  \mathrm d\Ttop &= \tfrac{1}{C_{\mathrm{top}}}\!\Big[
+      \alpha\Pel + \bar Q_{\mathrm{gshp}}\delta_g
+      - \beta Q_{\mathrm{dist}} - \kappa(\Ttop-\Tbot) - UA_t(\Ttop-\Tamb)\Big]\mathrm dt
+      + \sigma_t\,\mathrm d\omega_t, \label{eq:sde-top}\\
+  \mathrm d\Tbot &= \tfrac{1}{C_{\mathrm{bot}}}\!\Big[
+      \kappa(\Ttop-\Tbot) - UA_b(\Tbot-\Tamb)\Big]\mathrm dt
+      + \sigma_b\,\mathrm d\omega_b. \label{eq:sde-bot}
+\end{align}
+The two tank sensors give the discrete observations
+\begin{equation}
+  y^{(1)}_k = \Ttop(t_k) + e^{(1)}_k, \qquad
+  y^{(2)}_k = \Tbot(t_k) + e^{(2)}_k, \qquad
+  e^{(j)}_k\sim\mathcal N(0,\varepsilon_j^2),
+  \label{eq:tank-obs}
+\end{equation}
+mapped to columns \code{TT\_601} and \code{TT\_602}. The \emph{measured inputs}
+$u=[\Pel,\ \delta_g,\ Q_{\mathrm{dist}},\ \Tamb]$ are supplied as known time series
+($Q_{\mathrm{dist}}$ being the forecasted district load, not a flow); the
+\emph{estimated parameters} are
+\[
+  \theta=\{\,C_{\mathrm{top}},\,C_{\mathrm{bot}},\,\kappa,\,UA_t,\,UA_b,\,
+  \alpha,\,\beta,\,\bar Q_{\mathrm{gshp}},\,\sigma_t,\sigma_b,\,\varepsilon_1,\varepsilon_2\,\}.
+\]
+\texttt{ctsmTMB} runs the Kalman filter for a candidate $\theta$, reads off the
+likelihood of the observed \code{TT\_601},\code{TT\_602} series, and maximises it
+over $\theta$. Every parameter is pinned by a distinct feature of the data:
+$\alpha$ by how fast $\Ttop$ rises per unit $\Pel$; $\beta$ by the $\Ttop$ droop per
+unit forecast $Q_{\mathrm{dist}}$ during discharge (with $C_{\mathrm{top}}$ anchored
+to the known volume so the two do not trade off); $UA_\bullet$ by the standing
+cool-down when both pumps are off; $\kappa$ by how quickly $\Tbot$ follows $\Ttop$;
+$\bar Q_{\mathrm{gshp}}$ as explained next.
+
+\paragraph{GSHP: one constant, fitted here in Stage 1 --- there is no ``Stage 3''.}
+The GSHP is \textbf{not} a separate stage and does \textbf{not} join the Stage-2
+static equation \eqref{eq:staticmap}: that equation regresses power against a
+\emph{modulating} set-point, and the on/off GSHP has none. Because it is pure on/off
+with a nearly constant output, its whole model is a
+\emph{single scalar} $\bar Q_{\mathrm{gshp}}$ (the heat it delivers while running),
+switched by the measured binary $\delta_g=\code{PAC\_301\_RUN}\in\{0,1\}$ ---
+the term $\bar Q_{\mathrm{gshp}}\delta_g$ in \eqref{eq:sde-top}. There is nothing to
+curve-fit: flow$\times\Delta T$ or COP$\times$power can never be separated from
+on/off data, and the tank cares only about the net heat, which is the one number
+$\bar Q_{\mathrm{gshp}}$. It is identified \emph{for free} inside the same fit:
+during the intervals when $\delta_g=1$, the tank heats faster than $\alpha\Pel$
+alone can explain, and that unexplained extra rate of rise \emph{is}
+$\bar Q_{\mathrm{gshp}}$. One number, pinned by one effect. All data are kept ---
+when $\delta_g=0$ the term simply vanishes, so no GSHP-off filtering is needed.
+(Only if the GSHP were ever metered would the $\alpha_g P_{\mathrm{el},g}$ form of
+\eqref{eq:gshp} apply; for on/off it is unnecessary.)
+
+\subsection{Stage 2 --- the actuator map (offline, all-measured)}
+The nonlinear COP/$\Qmax$ map is needed \emph{only by the controller}, to predict
+$\Pel$ (the cost) and the ceiling from a \emph{hypothetical} decision $\Tsp$ ---
+which never occurs in the data. It is therefore fit \emph{separately and offline},
+and it is easy because \textbf{every variable in it is measured}. Using
+$\Ths\approx\Tsp$ at steady state and \eqref{eq:qhp-red}, the \emph{entire} static
+actuator --- demand branch, capacity ceiling, and COP --- collapses into a
+\textbf{single scalar equation}:
+\begin{equation}
+  \Pel = \frac{\,\overbrace{\min\!\big(\,G_h(\Tsp-\Thr),\ a_0+a_1\Tair\,\big)}^{\Qhp\ =\ \text{thermal demand, capped by ceiling}}\,}
+             {\underbrace{b_0+b_1\Tair+b_2\Tsp}_{\mathrm{COP}(\Tair,\Tsp)}}
+  \;\equiv\; g(x;\,p), \quad
+  x=(\Tsp,\Thr,\Tair),\ \ p=(G_h,a_0,a_1,b_0,b_1,b_2).
+  \label{eq:staticmap}
+\end{equation}
+The numerator is the delivered heat $\Qhp$: the thermal demand $G_h(\Tsp-\Thr)$
+limited by the air-dependent ceiling $a_0+a_1\Tair$; dividing by the COP turns heat
+into electrical power. All six parameters $p$ are fit from this one equation. The
+GSHP is deliberately \emph{not} in it --- being on/off it carries no set-point to
+regress against, so it degenerates to one constant and is folded into Stage~1
+(above), not fitted here.
+
+\paragraph{How a nonlinear static fit works.}
+Each logged sample $i$ (a timestamp with the ASHP running) supplies measured
+regressors $x_i=(\Tsp,\Thr,\Tair)_i$ and a measured output $y_i=P_{\mathrm{el},i}$. ``Static''
+means the prediction $\hat y_i=g(x_i;p)$ is obtained by \emph{plugging the row's
+numbers into \eqref{eq:staticmap}} --- no time integration, no dependence on any
+other sample; each row is one independent point on a surface. Fitting chooses the
+parameters $p$ that make the predictions sit closest to the measurements in the
+least-squares sense:
+\begin{equation}
+  \min_{p}\ S(p) = \sum_{i=1}^{N}\big(y_i-g(x_i;p)\big)^2 .
+  \label{eq:nls}
+\end{equation}
+This is the \emph{same} objective as fitting a straight line; the difference is only
+\emph{how the minimum is found}. Because $p$ enters through a product/ratio, there
+is no closed-form solution, so \eqref{eq:nls} is minimised \textbf{iteratively}:
+start from a guess $p^{0}$, linearise $g$ about it through the sensitivities
+$J_{ij}=\partial g(x_i;p)/\partial p_j$, solve a \emph{linear} least-squares problem
+for a downhill correction $\Delta p$, update $p\leftarrow p+\Delta p$, and repeat
+until $S$ stops decreasing (Gauss--Newton / Levenberg--Marquardt). ``Nonlinear least
+squares'' is therefore just ordinary least squares reached by walking downhill; it
+needs a sensible starting guess and, in principle, can settle in a local minimum ---
+that is the only cost of the nonlinearity.
+
+\paragraph{The capacity ceiling is fitted from saturation --- if the data reach it.}
+There is no sensor for the ceiling $a_0+a_1\Tair$; it is identified from \emph{where
+the machine stops responding}, and the $\min(\cdot)$ in \eqref{eq:staticmap} sorts
+the samples into the two regimes that make this possible. \emph{Below} the ceiling
+the compressor modulates: raising $\Tsp$ raises $\Pel$ and the supply reaches
+set-point, so these rows ride the demand branch and pin $G_h$ and the COP $b_j$.
+\emph{At} the ceiling the compressor is flat out: $\Pel$ plateaus and a
+\emph{persistent} tracking error opens up ($\Ths<\Tsp$ although the machine is on).
+Those saturated rows --- ``maxed out \emph{and} still short'' --- pin $a_0,a_1$, and
+the fit places the ceiling at the \emph{kink} where the point cloud bends from
+sloped to flat (equivalently, the upper envelope of $\Pel$ versus $\Tair$).
+
+\emph{Caveat --- excitation.} The ceiling is identifiable \textbf{only if the data
+actually hit it}. If the plant always kept headroom there are no saturated rows,
+$a_0,a_1$ are not identifiable, and this is not a defect: the data hold no
+information about a limit that was never reached. Then, for \emph{reproducing} the
+data, drop the $\min$ and keep the demand branch alone; for the \emph{MPC} --- which
+may command into saturation --- take the ceiling from the manufacturer's nameplate
+capacity curve $\Qmax(\Tair)$ rather than the fit. Practical test: flag rows with
+$\Pel$ pinned near its maximum \emph{and} $\Ths<\Tsp$; if enough of them span a range
+of $\Tair$, fit $a_0,a_1$; otherwise fix them from the datasheet and identify only
+$G_h$ and the COP.
+
+\paragraph{Scale degeneracy --- why the two stages need each other.}
+The Stage-2 regression has a scale ambiguity: multiplying $G_h$ and every $b_j$ by
+a common factor leaves $\Pel$ unchanged. It therefore fixes only the \emph{shape}
+of the COP's dependence on $(\Tair,\Tsp)$, not its absolute level. The absolute
+scale is pinned by Stage~1's $\alpha$, because the tank thermal mass times the
+measured temperature rise is an \emph{absolute} energy. Concretely:
+\[
+  \textbf{Stage 1 (tank)} \Rightarrow \text{absolute heat scale } \alpha;
+  \qquad
+  \textbf{Stage 2 (static regression)} \Rightarrow \text{conditions-dependence (shape)} .
+\]
+Anchor Stage~2 by fixing $b_0$, or by constraining its horizon-average COP to the
+$\alpha$ obtained in Stage~1.
+
+\subsection{Purist alternative --- one joint model}
+The two stages can be fused into a single maximum-likelihood problem. Add the
+logged set-point $\Tsp$ as a further input, and let the heat delivered be the
+\emph{latent} (unmeasured) quantity computed from the decision variable, capped by
+the ceiling:
+\begin{equation}
+  \Qhp = \min\!\big(\,G_h(\Tsp-\Tbot),\ a_0+a_1\Tair\,\big).
+  \label{eq:qhp-latent}
+\end{equation}
+This same $\Qhp$ is used in \emph{two} places at once. First it drives the tank top
+node, i.e.\ $\alpha\Pel$ in \eqref{eq:sde-top} is replaced by $\Qhp$:
+\begin{equation}
+  \mathrm d\Ttop = \tfrac{1}{C_{\mathrm{top}}}\!\Big[
+      \Qhp + \bar Q_{\mathrm{gshp}}\delta_g
+      - \beta Q_{\mathrm{dist}} - \kappa(\Ttop-\Tbot) - UA_t(\Ttop-\Tamb)\Big]\mathrm dt
+      + \sigma_t\,\mathrm d\omega_t .
+  \label{eq:sde-top-joint}
+\end{equation}
+Second, it appears in a \emph{third observation equation} against the measured
+electrical power (\code{PAC\_501\_PUISSANCE}):
+\begin{equation}
+  y^{(3)}_k = \frac{\Qhp(t_k)}{\,b_0+b_1\Tair+b_2\Tsp\,} + e^{(3)}_k,
+  \qquad e^{(3)}_k\sim\mathcal N(0,\varepsilon_3^2).
+  \label{eq:pel-obs}
+\end{equation}
+Because the tank observation \eqref{eq:tank-obs} and the power observation
+\eqref{eq:pel-obs} now share the \emph{same} latent $\Qhp$, the scale degeneracy of
+Stage~2 is resolved automatically: the tank fixes the absolute size of $\Qhp$ and
+the power equation fixes how it splits into $G_h$ and the COP denominator. One MLE
+then returns $\{C_\bullet,\kappa,UA_\bullet,\beta,\bar Q_{\mathrm{gshp}},G_h,a_0,a_1,
+b_0,b_1,b_2,\sigma_\bullet,\varepsilon_\bullet\}$ --- tank \emph{and} actuator
+parameters, mutually consistent.
+
+\textbf{Trade-off.} This is elegant but harder to initialise and debug: more local
+optima, the non-smooth $\min(\cdot)$ kink in \eqref{eq:qhp-latent}, and $\alpha$ is
+now \emph{implied} by $G_h$ and the COP rather than fit as its own number.
+\textbf{Recommendation:} run the two-stage version first, then --- only if the two
+stages disagree --- move to the joint model, using the two-stage estimates as its
+starting guess.
+
+\subsection{Remaining steps}
+\begin{enumerate}[nosep]
+  \item \textbf{Thermocline (optional):} calibrate the sensor-crossing heights and
+        $g(\theta)$ for the $\Vtop$ observer \eqref{eq:vtop}; trigger it by the
+        opposite-curvature diagnostic of \S\ref{sec:tank}.
+  \item \textbf{Validation:} multi-step-ahead ($k$-step) prediction on held-out
+        weeks (not one-step filtering, which hides model error), inspecting the
+        $\Ttop$ fit specifically around the discharge ``cliffs''.
+\end{enumerate}
+
+\paragraph{Data hygiene.}
+Time index is UTC; cumulative counters must be differenced to rates; report and
+handle the known 15-minute sampling gaps (\texttt{ctsmTMB} accepts non-uniform
+timestamps, but the gaps must be genuine, not silently interpolated); keep the
+inspection cache faithful (no resampling before identification).
+
+\end{document}

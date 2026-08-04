@@ -13,6 +13,11 @@ Activate and load the package from within the `flexibility_manager` folder:
 ```julia
 $ julia
 julia> import Pkg
+
+# Force Julia to bind to your specific Python environment
+# Note: Windows users must use double backslashes (\\)
+julia> ENV["PYTHON"] = "C:\\Users\\your_user\\...\\python.exe" 
+
 julia> Pkg.activate("FlexOPTi")
 julia> using FlexOPTi
 ```
@@ -47,23 +52,23 @@ pip install julia
 ### Step 3 — Configure PyJulia and load FlexOPTi
 
 ```python
-import julia
+>>> import julia
 
 # Only needed once, if Julia was not already configured for PyJulia
-julia.install()
+>>> julia.install()
 
-from julia import Pkg
-Pkg.activate(".")
-Pkg.develop(path="FlexOPTi")
+>>> from julia import Pkg
+>>> Pkg.activate(".")
+>>> Pkg.develop(path="FlexOPTi")
 
-from julia import FlexOPTi
+>>> from julia import FlexOPTi
 ```
 
 ### Step 4 — Run an optimization
 
 ```python
 # Required input files (JSON format)
-dt_file       = "path/to/digital_twin.json"   # model structure and identified dynamics
+dt_file       = "path/to/digital_twin.json"    # model structure and identified dynamics
 sensors_file  = "path/to/sensors.json"         # current measurements / initial conditions
 forecast_file = "path/to/forecasts.json"       # disturbance predictions (weather, occupancy...)
 
