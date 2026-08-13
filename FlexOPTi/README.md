@@ -92,8 +92,8 @@ oy = FlexOPTi.optimize(
 pilot = oy[:o].pilot
 
 # Parse results into a JSON-serializable dictionary
-#   only_next_step=True  → export only the first MPC step
-#   only_next_step=False → export the full horizon (default)
+#   only_next_step=true  → export only the first MPC step
+#   only_next_step=false → export the full horizon (default)
 json_data = FlexOPTi.parse_OPT_output(pilot, oy, only_next_step=false)
 
 # Write results to a JSON file
