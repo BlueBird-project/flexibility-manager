@@ -73,7 +73,7 @@ sensors_file  = "path/to/sensors.json"         # current measurements / initial 
 forecast_file = "path/to/forecasts.json"       # disturbance predictions (weather, occupancy...)
 
 # Run the optimization
-out_dic = FlexOPTi.optimize(
+oy = FlexOPTi.optimize(
     dt_file,
     sensors_file,
     forecast_file,
@@ -88,13 +88,16 @@ out_dic = FlexOPTi.optimize(
     # compute_datetime = ...    # ZonedDateTime for the MPC start time; defaults to current UTC time
 )
 
+# Extract pilot name for efficient multiple dispatch
+pilot = oy[:o].pilot
+
 # Parse results into a JSON-serializable dictionary
 #   only_next_step=True  → export only the first MPC step
 #   only_next_step=False → export the full horizon (default)
-json_data = FlexOPTi.parse_OPT_output(out_dic, only_next_step=False)
+json_data = FlexOPTi.parse_OPT_output(pilot, oy, only_next_step=false)
 
 # Write results to a JSON file
-FlexOPTi.write_outputs_to_file(json_data, file="./data/outputs/output.json")
+FlexOPTi.write_outputs_to_file(json_data, file=file_path)
 ```
 
 ### Keyword arguments reference for `optimize`
