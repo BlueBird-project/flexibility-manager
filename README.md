@@ -2,6 +2,12 @@
 
 Demand-response control system for local energy assets across EU partner sites. Each asset type is a **pilot** (EWH cold rooms, building HVAC, water works, district heating). The system runs economic Model Predictive Control on a configurable cadence, writes optimal setpoints to a shared database, and publishes them to the Building Management System via a Knowledge Engine.
 
+## UBFlex integration
+This component integrates with [UBFlex](https://github.com/BlueBird-project/UBFlex), the BlueBird common interface for Knowledge Engine-based interoperability. UBFlex provides BlueBird-specific ontology definitions, graph-pattern configurations and related integration resources. This repository retains responsibility for its own domain logic and implementation. For UBFlex integration assets and documentation, see the [UBFlex repository](https://github.com/BlueBird-project/UBFlex).
+
+The Flexibility Manager uses UBFlex for relevant exchanges with connected services while retaining responsibility for local asset modelling, optimisation, operational constraints and control actions.
+
+
 ---
 
 ## Architecture
