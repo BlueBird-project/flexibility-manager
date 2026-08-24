@@ -62,7 +62,7 @@ julia> oy[:p_HVAC]          # [35386.28, 26231.65, 18397.58, 25117.73]  — HVAC
 julia> size(oy[:T])         # (4, 36)  — full temperature state matrix
 ```
 
-Two keys carry the whole run context, which is useful for debugging and analysis:
+Two keys carry the full run context:
 
 | key | contents |
 |---|---|
@@ -94,25 +94,21 @@ json_data = FlexOPTi.parse_OPT_output(pilot, oy; only_next_step = false)
 FlexOPTi.write_outputs_to_file(json_data; file = "result.json")
 ```
 
-> **Note** — `parse_OPT_output` intentionally drops `:o` and `:ox`, and converts
-> values to JSON-friendly forms. If you need the options, the inputs, or the
-> native Julia types, use `oy` directly rather than the parsed output.
+> **Note** — `parse_OPT_output` drops `:o` and `:ox`. Use `oy` directly if you
+> need the options or the inputs.
 
 ---
 
 ## Python Usage
 
-**PyFlexOPTi** (`python/pyflexopti.py`) is the Python wrapper around the
-FlexOPTi Julia package. It drives FlexOPTi as a **subprocess**, exchanging data
-as JSON over temporary files, so no Julia/Python bridge (PyCall, PyJulia) is
-required. That exchange is an internal detail: you pass file paths and get a
-**Python `dict`** back — the JSON is already deserialized for you.
+**PyFlexOPTi** (`python/pyflexopti.py`) is the Python wrapper around the FlexOPTi
+Julia package. It runs FlexOPTi as a subprocess, so no Julia/Python bridge
+(PyCall, PyJulia) is required.
 
 Requirements:
 
 - a working `julia` on your `PATH` (Julia >= 1.11)
-- **Python 3.7+ — no `pip install` needed.** The wrapper uses only the standard
-  library (`json`, `pathlib`, `subprocess`, `tempfile`).
+- **Python 3.7+ — no `pip install` needed** (standard library only)
 
 ### Step 1 — Install the Julia dependencies (once)
 
@@ -128,44 +124,35 @@ sys.path.insert(0, "python")   # or add FlexOPTi/python to PYTHONPATH
 
 from pyflexopti import optimize
 
-result = optimize(
-    dt_file       = "path/to/digital_twin.json",  # model structure & identified dynamics
-    sensors_file  = "path/to/sensors.json",       # current measurements / initial conditions
-    forecast_file = "path/to/forecasts.json",     # disturbance predictions (weather, occupancy...)
-    pilot         = "Montcada",                   # required — "Montcada" or "Ewh" (case-sensitive)
-    Hu            = 4,                            # control horizon (future timesteps)
-    solver        = "HiGHS",                      # "HiGHS" (default) or "Gurobi"
-    market_country = "Germany",                   # None → dummy 1.0 EUR/kWh price
+oy = optimize(
+    dt_file        = "path/to/digital_twin.json",  # model structure & identified dynamics
+    sensors_file   = "path/to/sensors.json",       # current measurements / initial conditions
+    forecast_file  = "path/to/forecasts.json",     # disturbance predictions (weather, occupancy...)
+    pilot          = "Montcada",                   # required — "Montcada" or "Ewh" (case-sensitive)
+    Hu             = 24,                           # control horizon (future timesteps)
+    solver         = "HiGHS",                      # "HiGHS" (default) or "Gurobi"
+    market_country = "Spain",                      # None → dummy 1.0 EUR/kWh price
+    output_file    = "result.json",                # optional — also keep the JSON on disk
 )
 
-print(result["OPTTerminationStatus"])   # e.g. "OPTIMAL"
-print(result["HVACTotalPower"])         # setpoints with datetime + units
+print(oy["OPTTerminationStatus"])   # "OPTIMAL"
+print(oy["OPTCost"])                # 1051332.43...
+print(oy["HVACTotalPower"])         # setpoints with datetime + units
 ```
 
-`optimize` returns a plain Python `dict` — the wrapper has already run
-`json.loads` on the Julia output, so no parsing is left for you to do:
+`optimize` returns a Python `dict`, already deserialized — the equivalent of
+Julia's `parse_OPT_output(pilot, oy)`.
 
-```python
->>> type(result)
-<class 'dict'>
->>> result["OPTTerminationStatus"]
-'OPTIMAL'
->>> result["OPTCost"]
-1051332.4338460874
-```
+Useful extra arguments:
 
-This dict is the Python equivalent of Julia's `parse_OPT_output(pilot, oy)`
-result, so it carries the same renamed keys and units — and the same caveat:
-`:o` and `:ox` are not included (see [Exporting results to
-JSON](#exporting-results-to-json)). Values are plain JSON types (`list`,
-`float`, `str`), not Julia matrices.
+| kwarg | Effect |
+|---|---|
+| `output_file` | Also write the JSON to this path (omit → discarded after reading) |
+| `only_next_step` | `True` → only the first MPC step instead of the full horizon |
+| `capture_output` | `True` → hide Julia's logs (shown in the error message on failure) |
+| `julia` | Path to the `julia` executable, if not on `PATH` |
 
-Pass `output_file="result.json"` to also keep the JSON on disk, `only_next_step=True`
-to export just the first MPC step, and `capture_output=True` to suppress Julia's
-logs (they are then included in the error message if the run fails).
-
-Any additional keyword is forwarded straight to the Julia `optimize` function,
-so the full option surface below is reachable from Python.
+Any other keyword is forwarded to the Julia `optimize` (see the table below).
 
 ### Runnable example
 
@@ -176,7 +163,7 @@ import sys
 sys.path.insert(0, "python")
 from pyflexopti import optimize
 
-result = optimize(
+oy = optimize(
     dt_file       = "data/montcada/inputs/dynamics_estimator_results.json",
     sensors_file  = "data/montcada/inputs/df_predict.json",
     forecast_file = "data/montcada/inputs/dynamics_estimator_results.json",
@@ -185,7 +172,7 @@ result = optimize(
     market_country = None,
     compute_datetime = "2025-07-15T17:00:00+00:00",   # sample data covers July 2025
 )
-print(result["OPTTerminationStatus"])   # OPTIMAL
+print(oy["OPTTerminationStatus"])   # OPTIMAL
 ```
 
 > **Note** — the bundled sample data only covers **July 2025**. You must pass
