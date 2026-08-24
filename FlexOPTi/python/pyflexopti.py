@@ -39,6 +39,32 @@ class FlexOPTiError(RuntimeError):
     """Raised when the Julia optimization subprocess fails."""
 
 
+def _resolve_input(name: str, path: str) -> pathlib.Path:
+    """Resolve an input path against the caller's cwd and check it exists.
+
+    Relative paths are resolved against the *caller's* working directory,
+    not the package root. The most common mistake is running from the
+    parent folder while using paths written relative to the FlexOPTi
+    folder, so that case gets an explicit hint.
+    """
+    resolved = pathlib.Path(path).resolve()
+    if resolved.is_file():
+        return resolved
+
+    hint = ""
+    candidate = (_REPO_ROOT / path).resolve()
+    if not pathlib.Path(path).is_absolute() and candidate.is_file():
+        hint = (
+            f"\n\nThat path does exist relative to the FlexOPTi folder:"
+            f"\n    {candidate}"
+            f"\nYou are running from:"
+            f"\n    {pathlib.Path.cwd()}"
+            f"\nEither cd into {_REPO_ROOT}, or pass the full path."
+        )
+
+    raise FlexOPTiError(f"{name} not found: {resolved}{hint}")
+
+
 def optimize(
     dt_file: str,
     sensors_file: str,
@@ -84,13 +110,18 @@ def optimize(
             pathlib.Path(output_file).resolve() if output_file else tmpdir / "output.json"
         )
 
-        # The subprocess runs with cwd set to the repository root, so any
+        # The subprocess runs with cwd set to the package root, so any
         # relative path from the caller is resolved here, against *their*
         # working directory, before being handed to Julia.
+        inputs = {
+            "dt_file": dt_file,
+            "sensors_file": sensors_file,
+            "forecast_file": forecast_file,
+        }
+        resolved = {k: _resolve_input(k, v) for k, v in inputs.items()}
+
         config = {
-            "dt_file": str(pathlib.Path(dt_file).resolve()),
-            "sensors_file": str(pathlib.Path(sensors_file).resolve()),
-            "forecast_file": str(pathlib.Path(forecast_file).resolve()),
+            **{k: str(v) for k, v in resolved.items()},
             "pilot": pilot,
             "output_file": str(out_path),
             **kwargs,

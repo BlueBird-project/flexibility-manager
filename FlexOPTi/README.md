@@ -8,12 +8,19 @@ FlexOPTi is a flexibility optimization package written in [Julia](https://julial
 
 ## Julia Usage
 
-Activate and load the package from within the `flexibility_manager` folder:
+> **All commands and paths in this README assume you are inside the `FlexOPTi`
+> folder** (the one containing this file), unless stated otherwise.
+
+```bash
+cd FlexOPTi
+```
+
+Activate and load the package:
 
 ```julia
 $ julia
 julia> import Pkg
-julia> Pkg.activate("FlexOPTi")
+julia> Pkg.activate(".")
 julia> Pkg.instantiate()      # first time only — installs dependencies
 julia> using FlexOPTi
 ```
@@ -25,13 +32,81 @@ julia> ?
 help?> optimize
 ```
 
+### Running an optimization
+
+```julia
+# Required input files (JSON format)
+dt_file       = "data/montcada/inputs/dynamics_estimator_results.json"  # model structure & identified dynamics
+sensors_file  = "data/montcada/inputs/df_predict.json"                  # current measurements / initial conditions
+forecast_file = "data/montcada/inputs/dynamics_estimator_results.json"  # disturbance predictions
+
+# Run the optimization — returns a Dict{Symbol,Any}
+oy = FlexOPTi.optimize(
+    dt_file,
+    sensors_file,
+    forecast_file;
+    pilot          = "Montcada",   # required — "Montcada" or "Ewh" (case-sensitive)
+    Hu             = 4,            # control horizon (future timesteps)
+    solver         = "HiGHS",      # "HiGHS" (default) or "Gurobi"
+    market_country = nothing,      # nothing → dummy 1.0 EUR/kWh price
+)
+```
+
+`optimize` returns the **live results dictionary** `oy::Dict{Symbol,Any}`, not a
+file. Work with it directly in Julia — no serialization involved:
+
+```julia
+julia> oy[:OPT_status]      # OPTIMAL  (a MathOptInterface.TerminationStatusCode)
+julia> oy[:OPT_cost]        # 1.0513324338460874e6
+julia> oy[:p_HVAC]          # [35386.28, 26231.65, 18397.58, 25117.73]  — HVAC power per step [kW]
+julia> size(oy[:T])         # (4, 36)  — full temperature state matrix
+```
+
+Two keys carry the whole run context, which is useful for debugging and analysis:
+
+| key | contents |
+|---|---|
+| `oy[:o]` | the resolved options `O` (`Hu`, `Δt`, `solver`, `pilot`, prices config, …) |
+| `oy[:ox]` | the inputs `OX` (digital twin, sensors, forecasts, constraints, dynamics, prices) |
+
+```julia
+julia> oy[:o].Hu          # 4
+julia> oy[:o].solver      # "HiGHS"
+julia> oy[:ox].prices     # price vector actually used
+```
+
+### Exporting results to JSON
+
+Serialization is a **separate, optional step**. `parse_OPT_output` converts `oy`
+into a JSON-serializable `Dict{String,Any}` with renamed keys and units;
+`write_outputs_to_file` writes that to disk.
+
+```julia
+# Extract the pilot type for efficient multiple dispatch
+pilot = oy[:o].pilot
+
+# Parse results into a JSON-serializable dictionary
+#   only_next_step = true   → only the first MPC step
+#   only_next_step = false  → the full horizon (default)
+json_data = FlexOPTi.parse_OPT_output(pilot, oy; only_next_step = false)
+
+# Write to a JSON file
+FlexOPTi.write_outputs_to_file(json_data; file = "result.json")
+```
+
+> **Note** — `parse_OPT_output` intentionally drops `:o` and `:ox`, and converts
+> values to JSON-friendly forms. If you need the options, the inputs, or the
+> native Julia types, use `oy` directly rather than the parsed output.
+
 ---
 
 ## Python Usage
 
-**PyFlexOPTi** (`FlexOPTi/python/pyflexopti.py`) is the Python wrapper around the
-FlexOPTi Julia package. It drives FlexOPTi as a **subprocess**: inputs and
-outputs are JSON files, so no Julia/Python bridge (PyCall, PyJulia) is required.
+**PyFlexOPTi** (`python/pyflexopti.py`) is the Python wrapper around the
+FlexOPTi Julia package. It drives FlexOPTi as a **subprocess**, exchanging data
+as JSON over temporary files, so no Julia/Python bridge (PyCall, PyJulia) is
+required. That exchange is an internal detail: you pass file paths and get a
+**Python `dict`** back — the JSON is already deserialized for you.
 
 Requirements:
 
@@ -42,14 +117,14 @@ Requirements:
 ### Step 1 — Install the Julia dependencies (once)
 
 ```bash
-julia --project=FlexOPTi -e "import Pkg; Pkg.instantiate()"
+julia --project=. -e "import Pkg; Pkg.instantiate()"
 ```
 
 ### Step 2 — Call it from Python
 
 ```python
 import sys
-sys.path.insert(0, "FlexOPTi/python")   # or add the folder to PYTHONPATH
+sys.path.insert(0, "python")   # or add FlexOPTi/python to PYTHONPATH
 
 from pyflexopti import optimize
 
@@ -67,10 +142,27 @@ print(result["OPTTerminationStatus"])   # e.g. "OPTIMAL"
 print(result["HVACTotalPower"])         # setpoints with datetime + units
 ```
 
-`optimize` returns the parsed results as a plain Python `dict`. Pass
-`output_file="result.json"` to also keep the results on disk, and
-`capture_output=True` to suppress Julia's logs (they are then included in the
-error message if the run fails).
+`optimize` returns a plain Python `dict` — the wrapper has already run
+`json.loads` on the Julia output, so no parsing is left for you to do:
+
+```python
+>>> type(result)
+<class 'dict'>
+>>> result["OPTTerminationStatus"]
+'OPTIMAL'
+>>> result["OPTCost"]
+1051332.4338460874
+```
+
+This dict is the Python equivalent of Julia's `parse_OPT_output(pilot, oy)`
+result, so it carries the same renamed keys and units — and the same caveat:
+`:o` and `:ox` are not included (see [Exporting results to
+JSON](#exporting-results-to-json)). Values are plain JSON types (`list`,
+`float`, `str`), not Julia matrices.
+
+Pass `output_file="result.json"` to also keep the JSON on disk, `only_next_step=True`
+to export just the first MPC step, and `capture_output=True` to suppress Julia's
+logs (they are then included in the error message if the run fails).
 
 Any additional keyword is forwarded straight to the Julia `optimize` function,
 so the full option surface below is reachable from Python.
@@ -81,7 +173,7 @@ Using the Montcada sample data shipped with the repository:
 
 ```python
 import sys
-sys.path.insert(0, "FlexOPTi/python")
+sys.path.insert(0, "python")
 from pyflexopti import optimize
 
 result = optimize(
@@ -120,7 +212,7 @@ config and pass it to `scripts/run_optimize.jl`:
 ```
 
 ```bash
-julia --project=FlexOPTi FlexOPTi/scripts/run_optimize.jl config.json
+julia --project=. scripts/run_optimize.jl config.json
 ```
 
 Required keys are `dt_file`, `sensors_file`, `forecast_file`, `pilot` and

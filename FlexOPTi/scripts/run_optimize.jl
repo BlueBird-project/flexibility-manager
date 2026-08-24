@@ -25,7 +25,8 @@ using JSON
 const REQUIRED = ("dt_file", "sensors_file", "forecast_file", "pilot", "output_file")
 
 # Keys consumed here rather than forwarded to `optimize`.
-const CONSUMED = ("dt_file", "sensors_file", "forecast_file", "output_file")
+const CONSUMED = ("dt_file", "sensors_file", "forecast_file", "output_file",
+                  "only_next_step")
 
 function main(args)
     if length(args) != 1
