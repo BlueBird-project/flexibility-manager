@@ -169,6 +169,8 @@ def interpolate_timeseries_15min(
     return pd.concat(interpolated_series, ignore_index=True)
 
 file = "..."
+pilot_name = "..."
+project_forecast = "..."
 ds_col = "Timestamp"
 unique_col = "unique_id"
 value_col = "value"
@@ -196,6 +198,8 @@ if type(min_date) == str:
 
 days_ = (max_date - min_date).days - 10
 
+list_data = []
+
 for i in tqdm(range(15, days_)):
     dict_result = {}
     random_date = min_date + timedelta(days = i)
@@ -212,13 +216,21 @@ for i in tqdm(range(15, days_)):
     )
     prediction = pd.DataFrame(result["forecast"]).rename(columns={ "y": "yhat"})
     compare = pd.merge(test_data, prediction, on = ["ds", "unique_id"])
+
+    list_data.append(compare)
+
     
     dict_result["Coverage90"] = Coverage(compare['y'], compare['yhat'], 0.9)
     dict_result["Coverage80"] = Coverage(compare['y'], compare['yhat'], 0.8)
     dict_result["Coverage95"] = Coverage(compare['y'], compare['yhat'], 0.95)
     dict_result["SMAPE"] = SMAPE(compare['y'], compare['yhat'])
-
     list_result.append(dict_result)
+
+data_forecast_fm = pd.concat(list_data)
+
+
+
+data_forecast_fm.to_csv(f"forecast_test_{pilot_name}_{project_forecast}.csv", index = False)
 
 with open("results.json") as file:
     json.dump(result, file)
