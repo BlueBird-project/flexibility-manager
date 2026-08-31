@@ -7,6 +7,84 @@ from codecarbon import OfflineEmissionsTracker
 from tqdm import tqdm
 import json
 
+def ObtainWeatherValues(lat, lon, min_date, max_date):
+	
+	import openmeteo_requests
+	from datetime import datetime, timedelta
+
+	import pandas as pd
+	import requests_cache
+	from retry_requests import retry
+
+	# Setup the Open-Meteo API client with cache and retry on error
+	cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
+	retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+	openmeteo = openmeteo_requests.Client(session = retry_session)
+
+	# Make sure all required weather variables are listed here
+	# The order of variables in hourly or daily is important to assign them correctly below
+	url = "https://archive-api.open-meteo.com/v1/archive"
+	params = {
+		"latitude": lat,
+		"longitude": lon,
+		"start_date": min_date,
+		"end_date": max_date,
+		"hourly": ["temperature_2m", "relative_humidity_2m", "apparent_temperature", "wind_speed_10m", "direct_radiation"],
+	}
+	responses = openmeteo.weather_api(url, params = params)
+
+	# Process first location. Add a for-loop for multiple locations or weather models
+	response = responses[0]
+
+	# Process hourly data. The order of variables needs to be the same as requested.
+	hourly = response.Hourly()
+	hourly_temperature_2m = hourly.Variables(0).ValuesAsNumpy()
+	hourly_relative_humidity_2m = hourly.Variables(1).ValuesAsNumpy()
+	hourly_apparent_temperature = hourly.Variables(2).ValuesAsNumpy()
+	hourly_wind_speed_10m = hourly.Variables(3).ValuesAsNumpy()
+	hourly_direct_radiation = hourly.Variables(4).ValuesAsNumpy()
+
+	hourly_data = {
+		"date": pd.date_range(
+			start = pd.to_datetime(hourly.Time(), unit = "s", utc = True),
+			end =  pd.to_datetime(hourly.TimeEnd(), unit = "s", utc = True),
+			freq = pd.Timedelta(seconds = hourly.Interval()),
+			inclusive = "left"
+		)
+	}
+
+	hourly_data["temperature_2m"] = hourly_temperature_2m
+	hourly_data["relative_humidity_2m"] = hourly_relative_humidity_2m
+	hourly_data["apparent_temperature"] = hourly_apparent_temperature
+	hourly_data["wind_speed_10m"] = hourly_wind_speed_10m
+	hourly_data["direct_radiation"] = hourly_direct_radiation
+
+	hourly_dataframe = pd.DataFrame(data = hourly_data)
+
+	hourly_dataframe["ds"] = hourly_dataframe["date"].apply(lambda x: datetime.strftime(x, "%Y-%m-%d %H:%M:%S"))
+
+	return hourly_dataframe
+
+def ObtainCoordinates(dict_, use_case, location_id):
+
+    from geopy.geocoders import Nominatim
+    geolocator = Nominatim(user_agent="BB")
+
+    if type(dict_[use_case][location_id]["location"]) != str:
+        return dict_[use_case][location_id]["location"]
+    else:
+        direccion = dict_[use_case][location_id]["location"]
+        location = geolocator.geocode(direccion)
+
+        if location:
+            print("Latitud:", location.latitude)
+            print("Longitud:", location.longitude)
+            print("Dirección encontrada:", location.address)
+        else:
+            print("No se encontró la dirección")
+
+        return [location.latitude, location.longitude]
+
 def SMAPE(actual, predicted) -> float: 
         import numpy as np
         # Convert actual and predicted to numpy 
@@ -33,7 +111,11 @@ def Coverage(y_true, y_pred, threshold = 0.75):
     
     return np.round((total_/len(y_true))*100,2)
 
-def InferenceFM(data_to_forecast, forecast_horizon = 1, freq = "H", get_emissions = True, country_iso_code = "ES", project_name = "BlueBird FM Forecasting"):
+def InferenceFM(data_to_forecast, forecast_horizon = 1, freq = "H", 
+                weather_info = pd.DataFrame(),
+                get_emissions = True,country_iso_code = "ES", project_name = "BlueBird FM Forecasting"):
+
+    from codecarbon import OfflineEmissionsTracker
     
     if get_emissions:
         tracker = OfflineEmissionsTracker(country_iso_code=country_iso_code, project_name=project_name)
@@ -64,11 +146,26 @@ def InferenceFM(data_to_forecast, forecast_horizon = 1, freq = "H", get_emission
     elif freq == "Q":
         freq_number = 24*4
 
+    try:
+        max_date = max(data_to_forecast["ds"])
+        weather_future = weather_info[(weather_info["ds"] > max_date) & (weather_info["ds"] <= (max_date + timedelta(days = forecast_horizon)))]
+    except:
+        weather_future = pd.DataFrame()
+
     # Forecast
-    forecast = pipeline.predict_df(
-        data_to_forecast,
-        prediction_length = freq_number*forecast_horizon
-    )
+    if weather_future.shape[0] == 0:
+        forecast = pipeline.predict_df(
+            data_to_forecast,
+            prediction_length = freq_number*forecast_horizon
+        )
+    else:
+        data_to_forecast = pd.merge(data_to_forecast, weather_info, on = "ds")
+        weather_future.rename(columns = {"ds": "timestamp", "unique_id": "item_id"})
+        forecast = forecast = pipeline.predict_df(
+                    data_to_forecast,
+                    prediction_length = freq_number*forecast_horizon,
+                    future_df= weather_future
+                )
 
     forecast_dict = {
         "ds": forecast["timestamp"].tolist(),
@@ -171,9 +268,15 @@ def interpolate_timeseries_15min(
 file = "..."
 pilot_name = "..."
 project_forecast = "..."
+use_case = "...",
+location_id = 0
+weather_min = "..."
+weather_max = "..."
 ds_col = "Timestamp"
 unique_col = "unique_id"
 value_col = "value"
+
+#### STEP 1: PROCESS DATA ###
 
 data = pd.read_csv(file, sep = ";")
 data = data[[ds_col, unique_col, value_col]].groupby([ds_col, unique_col]).mean().reset_index()
@@ -198,7 +301,30 @@ if type(min_date) == str:
 
 days_ = (max_date - min_date).days - 10
 
+
+#### STEP 2: OBTAIN WEATHER VALUES ###
+
+with open("locations.json") as file:
+    locations = json.load(file)
+
+location_info = ObtainCoordinates(locations, use_case, location_id)
+
+weather_info = ObtainWeatherValues(
+    location_info[0], location_info[1], 
+    min_date = datetime.strftime(min_date, "%Y-%m-%d"),
+    max_date = datetime.strftime(max_date, "%Y-%m-%d")
+)
+
+weather_info["unique_id"] = use_case
+
+weather_info = interpolate_timeseries_15min(
+    weather_info.drop(["date"], axis = 1), "unique_id", "ds"
+)
+
+
+
 list_data = []
+list_data_weather = []
 
 for i in tqdm(range(15, days_)):
     dict_result = {}
@@ -214,23 +340,36 @@ for i in tqdm(range(15, days_)):
     result = InferenceFM(
         data_to_forecast, freq= "Q", get_emissions= False
     )
+
+    result_weather = InferenceFM(
+        data_to_forecast, freq = "Q", weather_info = weather_info, get_emissions= False
+    )
+
     prediction = pd.DataFrame(result["forecast"]).rename(columns={ "y": "yhat"})
+    prediction_weather = pd.DataFrame(result_weather["forecast"]).rename(columns={ "y": "yhat"})
     compare = pd.merge(test_data, prediction, on = ["ds", "unique_id"])
+    compare_weather = pd.merge(test_data, prediction_weather, on = ["ds", "unique_id"])
 
     list_data.append(compare)
-
+    list_data_weather.append(compare_weather)
     
     dict_result["Coverage90"] = Coverage(compare['y'], compare['yhat'], 0.9)
     dict_result["Coverage80"] = Coverage(compare['y'], compare['yhat'], 0.8)
     dict_result["Coverage95"] = Coverage(compare['y'], compare['yhat'], 0.95)
     dict_result["SMAPE"] = SMAPE(compare['y'], compare['yhat'])
+
+    dict_result["Coverage90_weather"] = Coverage(compare_weather['y'], compare_weather['yhat'], 0.9)
+    dict_result["Coverage80_weather"] = Coverage(compare_weather['y'], compare_weather['yhat'], 0.8)
+    dict_result["Coverage95_weather"] = Coverage(compare_weather['y'], compare_weather['yhat'], 0.95)
+    dict_result["SMAPE_weather"] = SMAPE(compare_weather['y'], compare_weather['yhat'])
+
     list_result.append(dict_result)
 
 data_forecast_fm = pd.concat(list_data)
-
-
+data_forecast_fm_weather = pd.concat(list_data_weather)
 
 data_forecast_fm.to_csv(f"forecast_test_{pilot_name}_{project_forecast}.csv", index = False)
+data_forecast_fm_weather.to_csv(f"forecast_test_{pilot_name}_{project_forecast}_weather.csv", index = False)
 
 with open("results.json") as file:
     json.dump(result, file)
