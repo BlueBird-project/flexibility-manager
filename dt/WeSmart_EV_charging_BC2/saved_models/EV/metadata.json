@@ -1,0 +1,39 @@
+{
+  "state_dim": 14,
+  "action_dim": 2,
+  "observation_size": 14,
+  "action_size": 2,
+  "price_horizon": 4,
+  "interval_minutes": 15,
+  "components": [
+    "EVComponent"
+  ],
+  "norm_state": {
+    "EVComponent": {
+      "norm_max_kwh": 120.4637,
+      "norm_max_hours": 22.25,
+      "power_kw": 9.0,
+      "station_ids": [
+        1,
+        2
+      ]
+    }
+  },
+  "config": {
+    "gamma": 0.97,
+    "lr": 0.0001,
+    "batch_size": 64,
+    "buffer_capacity": 10000,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.0,
+    "epsilon_decay_steps": 350000,
+    "target_update_freq": 500,
+    "hidden_sizes": [
+      64,
+      64
+    ],
+    "seed": 1,
+    "device": "cpu",
+    "max_grad_norm": null
+  }
+}

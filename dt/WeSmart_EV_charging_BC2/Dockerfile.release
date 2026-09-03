@@ -1,0 +1,41 @@
+# Self-contained handoff image: the trained checkpoint is baked in, so whoever
+# receives this image runs it with zero setup — no volumes, no separate files.
+# Trade-off vs. the main Dockerfile: a new/retrained model means rebuilding
+# this image, not just restarting a container against a different folder.
+#
+# Build (choose which saved_models/<run> to bake in):
+#   docker build -f Dockerfile.release --build-arg MODEL_RUN=EV -t ev-dqn-inference:ev-v1 .
+#
+# Recipient runs it with nothing else needed:
+#   docker run -p 8080:8080 ev-dqn-inference:ev-v1
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.7.1
+
+COPY service/requirements.txt ./service/requirements.txt
+RUN pip install --no-cache-dir -r service/requirements.txt
+
+COPY src/agent ./src/agent
+COPY service ./service
+
+# Which saved_models/<run> folder to bake in as /models. Must contain
+# q_state_dict.pth + metadata.json (q_target_state_dict.pth isn't needed for
+# inference but copying it too is harmless).
+ARG MODEL_RUN=EV
+COPY saved_models/${MODEL_RUN} /models
+LABEL model.run="${MODEL_RUN}"
+
+ENV MODEL_DIR=/models \
+    HOST=0.0.0.0 \
+    PORT=8080 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import os,sys,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT','8080') + '/health', timeout=2)" || exit 1
+
+CMD ["python", "-m", "service.inference_server"]

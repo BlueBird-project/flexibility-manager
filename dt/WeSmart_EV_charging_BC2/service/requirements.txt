@@ -1,0 +1,5 @@
+# Runtime deps for the inference service only — deliberately excludes
+# pandas/openpyxl/matplotlib/seaborn (training/analysis-only) to keep the
+# Docker image small. torch is installed separately in the Dockerfile from
+# the CPU-only wheel index.
+numpy>=1.26

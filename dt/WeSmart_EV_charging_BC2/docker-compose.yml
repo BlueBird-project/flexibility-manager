@@ -1,0 +1,14 @@
+# Convenience for local runs: docker compose up --build
+# Mounts a trained checkpoint folder read-only so retraining on the host
+# (python main.py train) doesn't require rebuilding the image — just restart
+# the container. Point MODEL_DIR_HOST at whichever run you want to serve.
+services:
+  ev-dqn-inference:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      MODEL_DIR: /models
+    volumes:
+      - ${MODEL_DIR_HOST:-./saved_models/EV}:/models:ro
+    restart: unless-stopped

@@ -1,0 +1,21 @@
+# Same as .dockerignore but WITHOUT excluding saved_models/ — Dockerfile.release
+# needs to COPY a specific saved_models/<run> folder into the image.
+.venv/
+.idea/
+legacy/
+outputs/
+output/
+saved_results/
+src/env/
+main.py
+requirements.txt
+README.md
+CLAUDE.md
+service/test_state_parity.py
+*.csv
+*.xlsx
+
+__pycache__/
+*.pyc
+.git/
+.gitignore

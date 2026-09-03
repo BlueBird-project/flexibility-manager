@@ -1,0 +1,11 @@
+# Core runtime
+numpy>=1.26
+pandas>=2.2
+torch>=2.4
+
+# Required to read the default price dataset (price_two_years_15min.xlsx)
+openpyxl>=3.1
+
+# Used by the data-prep / exploration scripts in src/env/dataset/ and output/
+matplotlib>=3.8
+seaborn>=0.13
