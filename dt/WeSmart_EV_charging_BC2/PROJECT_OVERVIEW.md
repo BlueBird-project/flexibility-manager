@@ -22,22 +22,28 @@ ML knowledge is needed to *run* it — just Docker.
 
 ## 3. What you receive, and how to run it locally
 
-You'll be handed a single file: a `.tar` (roughly 275 MB) exported from a self-contained Docker
-image — the trained model's weights are baked in, so nothing else needs to be sent alongside it.
+You'll be given access to this Git repository — no separate file to receive or transfer. The
+trained model's weights (`saved_models/EV/`) are committed in the repo, so cloning it is enough
+to build a self-contained Docker image locally; nothing else needs to be sent alongside it.
 
 **To run it on your own machine:**
 
-1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, Mac, or
-   Linux) if you don't already have it, and make sure it's running.
-2. Load the image from the file (run once, from wherever the `.tar` was saved):
+1. Install Docker Desktop if you don't already have it, and make sure it's running.
+2. Install Git if you don't already have it.
+3. Clone the repository and move into it:
    ```
-   docker load -i ev-dqn-ev-v1.tar
+   git clone https://github.com/BlueBird-project/flexibility-manager.git
+   cd flexibility-manager/dt/WeSmart_EV_charging_BC2
    ```
-3. Start it as a background service, listening on port 8080:
+4. Build the image (bakes in the `EV` checkpoint from `saved_models/EV/`):
+   ```
+   docker build -f Dockerfile.release --build-arg MODEL_RUN=EV -t ev-dqn-inference:ev-v1 .
+   ```
+5. Start it as a background service, listening on port 8080:
    ```
    docker run -d -p 8080:8080 --restart unless-stopped --name ev-dqn ev-dqn-inference:ev-v1
    ```
-4. Confirm it's up:
+6. Confirm it's up:
    ```
    docker ps
    ```
@@ -50,7 +56,8 @@ requests as described in the API section, and it answers immediately (a network 
 in well under a millisecond on CPU — no GPU needed).
 
 To stop it: `docker stop ev-dqn`. To start it again later: `docker start ev-dqn` (no need to
-`docker run` again — it remembers the settings).
+`docker run` again — it remembers the settings). To pick up a retrained model later, `git pull`
+and repeat steps 4–5.
 
 ## 4. The API
 
