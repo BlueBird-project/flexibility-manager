@@ -20,6 +20,15 @@ class EVChargingEnv:
         fixed_penalty: Fixed € penalty when EV departs undercharged.
         skip_empty: If True, reset/step skip forward to the next interval
                      where at least one EV is present.
+        power_limit_kw: Optional shared power cap (kW) across all stations for a
+                     single interval. Charging stays binary per station (each
+                     station draws exactly power_kw or 0 -- no partial power),
+                     so at most floor(power_limit_kw / power_kw) stations can
+                     charge at once. If more stations request charging (action
+                     1) than that, the most urgent ones (least achievable
+                     charge remaining relative to time left) win priority; the
+                     rest are curtailed for that interval as if their action
+                     had been 0. None (default) disables the cap.
     """
 
     def __init__(
@@ -32,6 +41,7 @@ class EVChargingEnv:
             penalty_per_kwh: float = 5.0,
             fixed_penalty: float = 10.0,
             skip_empty: bool = True,
+            power_limit_kw: Optional[float] = None,
     ):
         # ---- store params ------------------------------------------------
         self.norm_max_hours = (sessions_df["departure"] - sessions_df["arrival"]).dt.total_seconds().max() / 3600
@@ -43,6 +53,7 @@ class EVChargingEnv:
         self.penalty_per_kwh = penalty_per_kwh
         self.fixed_penalty = fixed_penalty
         self.skip_empty = skip_empty
+        self.power_limit_kw = power_limit_kw
         self._session_acc = {}
 
         # ---- price data ---------------------------------------------------
@@ -81,7 +92,46 @@ class EVChargingEnv:
         # keep a *working* copy of sessions so we can track remaining energy
         self._active_sessions: Optional[dict] = None  # station_idx -> session row
         self.done = False
+        self.printer()
 
+
+    def printer(self):
+        # Assuming 'env' is already initialized (e.g., env = EVChargingEnv(...))
+        print("\n" + "=" * 60)
+        print("  EV CHARGING ENVIRONMENT OBSERVATION VECTOR BREAKDOWN")
+        print("=" * 60)
+        print(f"Total State Vector Size: {self.observation_size} dimensions")
+        print("-" * 60)
+
+        # 1. Price Breakdown
+        print(f"1. MARKET PRICES ({1 + self.price_window} dimensions):")
+        print(f"   • Index [0]      : Target Price (t+1)")
+        for k in range(1, self.price_window + 1):
+            print(f"   • Index [{k}]      : Future Horizon Price (t+1+{k})")
+
+        # 2. Time Breakdown
+        idx_sin = 1 + self.price_window
+        idx_cos = idx_sin + 1
+        print(f"\n2. TIME ENCODING (2 dimensions):")
+        print(f"   • Index [{idx_sin}]      : Sin Component of Time (t+1 fraction of day)")
+        print(f"   • Index [{idx_cos}]      : Cos Component of Time (t+1 fraction of day)")
+
+        # 3. Station Breakdown (Simplified)
+        print(f"\n3. EV CHARGING STATIONS ({4 * self.n_stations} dimensions total):")
+        print(f"   There are {self.n_stations} total stations registered: {self.station_ids}")
+        print(f"   Each station adds 4 features sequentially (starting at Index {idx_cos + 1}):")
+        print(f"     - Feature 1 : EV Present Flag (0.0 or 1.0)")
+        print(f"     - Feature 2 : Remaining Energy Needed (kWh)")
+        print(f"     - Feature 3 : Hours Until Departure")
+        print(f"     - Feature 4 : Urgency Coefficient (Remaining kWh / Max Possible kWh)")
+
+        print("-" * 60)
+        print(f"Action Size: {self.action_size} dimensions (Binary decisions per station)")
+        if self.power_limit_kw is not None:
+            max_active = int(self.power_limit_kw // self.power_kw)
+            print(f"Shared power cap: {self.power_limit_kw} kW "
+                  f"(at most {max_active}/{self.n_stations} stations charging at once)")
+        print("=" * 60 + "\n")
     # ------------------------------------------------------------------
     #  Time helpers
     # ------------------------------------------------------------------
@@ -95,10 +145,12 @@ class EVChargingEnv:
         """Return the price for the interval starting at *t*.
 
         Uses the last known price at or before *t* (forward‑fill logic).
+        Relies on price_series' index being sorted ascending (guaranteed at
+        construction) to binary-search instead of scanning the full index.
         """
-        mask = self.price_series.index <= t
-        if mask.any():
-            return float(self.price_series.loc[mask].iloc[-1])
+        pos = self.price_series.index.searchsorted(t, side="right") - 1
+        if pos >= 0:
+            return float(self.price_series.iloc[pos])
         # before any price data – return first available price
         return float(self.price_series.iloc[0])
 
@@ -160,6 +212,35 @@ class EVChargingEnv:
         return self.power_kw * (self.interval_minutes / 60.0) * fraction
 
     # ------------------------------------------------------------------
+    #  Shared power cap
+    # ------------------------------------------------------------------
+    def _select_charging_stations(self, t: pd.Timestamp, sessions: dict, requested: list) -> set:
+        """Given stations that requested to charge this interval, return the
+        subset actually allowed to under the shared power_limit_kw cap.
+
+        Every charging station draws the same power_kw (binary per-station
+        decision, no partial power), so at most floor(power_limit_kw /
+        power_kw) can be active at once. When the request exceeds that,
+        priority goes to the most urgent EVs -- highest remaining_kwh
+        relative to what's still achievable before departure.
+        """
+        if self.power_limit_kw is None or not requested:
+            return set(requested)
+
+        max_active = int(self.power_limit_kw // self.power_kw)
+        if len(requested) <= max_active:
+            return set(requested)
+
+        def urgency(s_idx: int) -> float:
+            sess = sessions[s_idx]
+            hours_left = max((sess["departure"] - t).total_seconds() / 3600.0, 0.0)
+            max_possible = hours_left * self.power_kw
+            return self.remaining_kwh[s_idx] / (max_possible + 1e-6)
+
+        ranked = sorted(requested, key=urgency, reverse=True)
+        return set(ranked[:max_active])
+
+    # ------------------------------------------------------------------
     #  State construction
     # ------------------------------------------------------------------
     def _build_state(self) -> np.ndarray:
@@ -176,8 +257,9 @@ class EVChargingEnv:
         # --- prices ---
         next_price = self._get_price(t)
         prev_prices = []
+        # with + is next prices, - is previous
         for k in range(1, self.price_window + 1):
-            prev_prices.append(self._get_price(t - k * self.interval_td))
+            prev_prices.append(self._get_price(t + k * self.interval_td))
 
         # --- time encoding (fraction of day) ---
         minutes_of_day = t.hour * 60 + t.minute
@@ -283,6 +365,7 @@ class EVChargingEnv:
                 "charging_cost": np.zeros(self.n_stations),
                 "penalties": np.zeros(self.n_stations),
                 "energy_delivered": np.zeros(self.n_stations),
+                "curtailed": np.zeros(self.n_stations, dtype=bool),
             }
 
         # ---- 2. Sync arrivals at the new current time --------------------
@@ -297,28 +380,36 @@ class EVChargingEnv:
             "charging_cost": np.zeros(self.n_stations),
             "penalties": np.zeros(self.n_stations),
             "energy_delivered": np.zeros(self.n_stations),
+            "curtailed": np.zeros(self.n_stations, dtype=bool),
         }
 
-        # ---- 3. Apply charging actions at t+1 ----------------------------
-        for s_idx in range(self.n_stations):
-            if s_idx not in sessions:
-                continue  # no EV → action is irrelevant
-            if actions[s_idx] == 1:
-                sess = sessions[s_idx]
-                max_energy = self._effective_energy(sess, t)
-                energy = min(max_energy, self.remaining_kwh[s_idx])
-                self.remaining_kwh[s_idx] -= energy
-                cost = price * energy
-                self.cumulative_cost[s_idx] += cost
-                reward -= cost
-                info["charging_cost"][s_idx] = cost
-                info["energy_delivered"][s_idx] = energy
+        # ---- 3. Apply charging actions at t+1, subject to the shared -----
+        #         power cap (excess requests are curtailed, i.e. treated as 0)
+        requested = [
+            s_idx for s_idx in range(self.n_stations)
+            if s_idx in sessions and actions[s_idx] == 1
+        ]
+        allowed = self._select_charging_stations(t, sessions, requested)
 
-                sid = sess.name
-                acc = self._session_acc.get(sid, {"delivered": 0.0, "cost": 0.0, "penalty": 0.0})
-                acc["delivered"] += float(energy)
-                acc["cost"] += float(cost)
-                self._session_acc[sid] = acc
+        for s_idx in requested:
+            if s_idx not in allowed:
+                info["curtailed"][s_idx] = True
+                continue
+            sess = sessions[s_idx]
+            max_energy = self._effective_energy(sess, t)
+            energy = min(max_energy, self.remaining_kwh[s_idx])
+            self.remaining_kwh[s_idx] -= energy
+            cost = price * energy
+            self.cumulative_cost[s_idx] += cost
+            reward -= cost
+            info["charging_cost"][s_idx] = cost
+            info["energy_delivered"][s_idx] = energy
+
+            sid = sess.name
+            acc = self._session_acc.get(sid, {"delivered": 0.0, "cost": 0.0, "penalty": 0.0})
+            acc["delivered"] += float(energy)
+            acc["cost"] += float(cost)
+            self._session_acc[sid] = acc
 
         margin = 96/100
         # ---- 4. Check departures at end of interval [t, t+Δ) -------------

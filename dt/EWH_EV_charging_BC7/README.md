@@ -46,7 +46,8 @@ During each timestep:
 
 ### State representation
 At every decision step, the environment returns a flattened numeric vector containing:
-1. Price signal: price at next timestep, and a window of N previous prices (e.g. 6)
+1. Price signal: price at next timestep, followed by a window of N further *future* prices
+(price_window=12 by default) — all forward-looking, there is no historical/past price in the state
 2. Time of day encoding: for representing the time, sine and cosine encoding are used 
 (sin(2π·time) and cos(2π·time))
 3. For each station, a block of 4 values: EV present (0/1), remaining kWh, hours to departure, 
@@ -56,7 +57,7 @@ The state will look like this:
 ~~~
 [
  next_price,
- prev_price_1, prev_price_2, ..., prev_price_k,
+ future_price_1, future_price_2, ..., future_price_k,
  sin_time, cos_time,
  [present_1, remaining_1, hours_left_1, urgency_1],
  [present_2, remaining_2, hours_left_2, urgency_2],
@@ -71,6 +72,15 @@ The reward is constructed from:
 - Penalty for impossibility of fully charging an EV in a specific timestep, to help the agent learn faster
 
 This combination will encourage the agent to get minimum costs, minimum unmet energy, and respect charging deadlines.
+
+### Shared power limit (optional)
+The environment can optionally enforce a shared power cap (`power_limit_kw`, set via the `POWER_LIMIT_KW`
+constant in [main.py](main.py); `None` by default = disabled) across all stations for a single interval.
+The action space stays binary per station — this does not change what the agent decides. Instead, if more
+stations request to charge in the same interval than the cap allows, the excess requests are curtailed
+(treated as if their action had been 0 for that interval only); priority goes to the most urgent EVs
+(highest remaining energy relative to time left before departure). See
+`EVChargingEnv._select_charging_stations` in [env.py](src/env/env.py).
 
 
 # How to run the project
@@ -115,7 +125,7 @@ You can also specify these optional arguments:
 ~~~
 2. The price dataset path:
 ~~~
---prices PATH
+--price PATH
 (default = src/env/dataset/price_two_years_15min.xlsx)
 ~~~
 3. Enable/ disable detailed printing:
@@ -124,7 +134,7 @@ You can also specify these optional arguments:
 ~~~
 4. Save the model:
 ~~~
---save_model: yes/no (default = yes)
+--save-model: yes/no (default = yes)
 ~~~
    
 
@@ -147,7 +157,7 @@ You can also specify these optional arguments:
 ~~~
 2. The price dataset path:
 ~~~
---prices PATH 
+--price PATH 
 (default = src/env/dataset/price_two_years_15min.xlsx)
 ~~~
 3. Q-network path for the DQN:
@@ -158,7 +168,7 @@ You can also specify these optional arguments:
 4. Q-target-network path for the DQN:
 ~~~
 --qtarget PATH
-(default = saved_models/qtarget_state_dict.pth)
+(default = saved_models/q_target_state_dict.pth)
 ~~~
 5. Enable/disable printing:
 ~~~
