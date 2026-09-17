@@ -92,7 +92,17 @@ class DQNAgent:
         self.save = save
         self.save_dir = save_dir
 
+        # Optional safety layer applied to every action this agent emits, in training
+        # and evaluation alike, so what is learned is what is served. See
+        # main.make_deadline_guard(). None = the raw policy decides everything.
+        self.action_guard = None
+        # description of the guard, persisted so the live service applies the same rule
+        self.guard_meta = None
+
     # ------------------- Policy -------------------
+    def _guard(self, state_vec: np.ndarray, actions: np.ndarray) -> np.ndarray:
+        return actions if self.action_guard is None else self.action_guard(state_vec, actions)
+
     def _epsilon_now(self) -> float:
         frac = min(1.0, self.steps_done / max(1, self.cfg.epsilon_decay_steps))
         return max(self.cfg.epsilon_end,
@@ -104,12 +114,13 @@ class DQNAgent:
         self.epsilon = self._epsilon_now()
 
         if random.random() < self.epsilon:
-            return np.random.randint(0, 2, size=self.action_dim)
+            return self._guard(state_vec, np.random.randint(0, 2, size=self.action_dim))
 
         with torch.no_grad():
             s = torch.tensor(state_vec, dtype=torch.float32, device=self.device).unsqueeze(0)
             q_vals = self.q(s).view(self.action_dim, 2)  # (S,2)
-            return q_vals.argmax(dim=-1).detach().cpu().numpy().astype(np.int64)  # (S,)
+            a = q_vals.argmax(dim=-1).detach().cpu().numpy().astype(np.int64)  # (S,)
+        return self._guard(state_vec, a)
 
     def select_action_greedy(self, state_vec: np.ndarray) -> np.ndarray:
         """Greedy w.r.t. Q (no exploration)."""
@@ -121,7 +132,7 @@ class DQNAgent:
             action = q_vals.argmax(dim=-1).detach().cpu().numpy().astype(np.int64)
         if was_training:
             self.q.train()
-        return action
+        return self._guard(state_vec, action)
 
     # ------------------- Learning -------------------
     def optimize(self) -> None:
@@ -147,6 +158,9 @@ class DQNAgent:
             q_ns_sum = q_ns.max(dim=2).values.sum(dim=1)  # (B,)
             target = r + self.cfg.gamma * q_ns_sum * (1.0 - d)
 
+        # (huber/smooth-L1 was measured here and made things much worse: 4/6 runs
+        # catastrophic on EV vs 1/15 with mse -- bounding the gradient on the rare
+        # big-penalty transitions is exactly the signal this task needs to learn.)
         loss = F.mse_loss(q_sa_sum, target)
         self.optim.zero_grad()
         loss.backward()
@@ -184,6 +198,7 @@ class DQNAgent:
             "interval_minutes": int(getattr(env, "interval_minutes", 15)),
             "components": [type(c).__name__ for c in env.components],
             "norm_state": env.get_norm_state(),
+            "action_guard": self.guard_meta,
             "config": cfg,
         }
         (path / METADATA_FILENAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -198,7 +213,22 @@ class DQNAgent:
         return json.loads(p.read_text(encoding="utf-8"))
 
     # ------------------- Training loop -------------------
-    def train(self, env, episodes: int = 1000, verbose: bool = True, start_date=None):
+    def train(self, env, episodes: int = 1000, verbose: bool = True, start_date=None,
+              val_env=None, val_every: int = 1):
+        """
+        Train for `episodes` episodes.
+
+        val_env: optional environment holding a *validation* split (held out from
+            training, disjoint from test) built with the training normalisation
+            constants. When given, the greedy policy is scored on it every
+            `val_every` episodes and the best-scoring weights are what gets kept
+            and saved. Without it the checkpoint is simply whatever the last
+            episode produced, which is a coin flip: episode-to-episode test cost
+            swings by several percent and late episodes still throw occasional
+            undercharge penalties.
+        """
+        best_score, best_state, best_ep = None, None, None
+
         for ep in range(episodes):
             obs = env.reset(start_date=start_date)  # np.ndarray state vector
             state = env.normalize_state(obs)
@@ -226,10 +256,24 @@ class DQNAgent:
                 print(f"Ep {ep + 1:4d} | R={total_reward:.3f} | ε={self.epsilon:.3f} | "
                       + self._format_metrics(env, info_history))
 
-            # sanity check against the greedy policy — note this runs on the
-            # *training* data, so it is a fit check, not a generalisation check
-            if ep > 0 and ep % 10 == 0:
+            if val_env is not None:
+                if (ep + 1) % val_every == 0:
+                    out = self.evaluate(val_env, greedy=True, verbose=verbose, label="VAL")
+                    score = float(out["per_episode"][0]["reward"])
+                    if best_score is None or score > best_score:
+                        best_score, best_ep = score, ep + 1
+                        best_state = {k: v.detach().cpu().clone()
+                                      for k, v in self.q.state_dict().items()}
+            elif ep > 0 and ep % 10 == 0:
+                # sanity check against the greedy policy — note this runs on the
+                # *training* data, so it is a fit check, not a generalisation check
                 self.evaluate(env, greedy=True, verbose=verbose, label="TRAIN-EVAL")
+
+        if best_state is not None:
+            self.q.load_state_dict(best_state)
+            self.q_target.load_state_dict(best_state)
+            print(f"Restored best-validation weights from episode {best_ep} "
+                  f"(VAL reward {best_score:.3f})")
 
         if self.save:
             self.save_checkpoint(env)

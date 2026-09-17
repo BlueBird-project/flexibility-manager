@@ -4,6 +4,45 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
+PRICE_ENCODINGS = ("raw", "window")
+
+
+def encode_prices(quarter_prices, horizon: int, ratio: int, encoding: str, scale: float) -> list[float]:
+    """
+    Turn consecutive quarter-hour prices into the price block of the state vector.
+
+    quarter_prices: 1 + (horizon - 1) * ratio prices, starting at the interval about to
+        be decided. ratio = price step / interval (e.g. 30-min step / 15-min interval = 2).
+    Values: the exact price of that first interval, then the mean of each following
+        block of `ratio` quarter-hours, so no quarter-hour is skipped or counted twice.
+
+    encoding "raw"    -> those `horizon` values as-is (EUR/kWh). With ratio 1 this is the
+                         original 4-price state, kept for pre-change checkpoints.
+    encoding "window" -> `horizon + 2` values, all bounded:
+        window  min-max scaled within the window: 0 = cheapest, 1 = dearest. Timing only
+                depends on where a price sits relative to what is coming, and this makes
+                that independent of seasonal/yearly price level. A flat window is 0.5.
+        level   current price / scale, clipped to [-1, 1] (prices go negative). Min-max
+                discards the absolute level, which still matters when weighing a charge
+                against an undercharge penalty or against waiting for free PV.
+        spread  (max - min) / scale, clipped to [0, 1]. Without it a nearly flat night
+                gets stretched to the full 0..1 range and looks worth chasing.
+    scale is the training period's 99th percentile of |price|.
+
+    Duplicated in service/state_builder.py; test_state_parity.py checks the two agree.
+    """
+    q = [float(p) for p in quarter_prices]
+    values = [q[0]] + [sum(q[1 + (k - 1) * ratio: 1 + k * ratio]) / ratio for k in range(1, horizon)]
+    if encoding == "raw":
+        return values
+    lo, hi = min(values), max(values)
+    span = hi - lo
+    window = [0.5] * horizon if span < 1e-9 else [(v - lo) / span for v in values]
+    level = max(-1.0, min(1.0, q[0] / scale))
+    spread = max(0.0, min(1.0, span / scale))
+    return window + [level, spread]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 #  Contract every device plugin must satisfy
 # ──────────────────────────────────────────────────────────────────────────────
@@ -129,18 +168,41 @@ class EnergyEnv:
         interval_minutes: int = 15,
         price_horizon: int = 4,
         skip_empty: bool = True,
+        price_step_minutes: Optional[int] = None,
+        price_encoding: str = "raw",
+        price_scale: Optional[float] = None,
+        price_scale_period: Optional[tuple] = None,
     ):
         """
         price_horizon: number of forward-looking price values in the state, starting
-            at the interval about to be decided (t, t+1, ..., t+price_horizon-1).
-            Belgian day-ahead prices are published a day ahead, so this is a known
-            schedule, not a forecast — a live deployment can supply it exactly.
+            at the interval about to be decided. Belgian day-ahead prices are published
+            a day ahead, so this is a known schedule, not a forecast — a live deployment
+            can supply it exactly.
+        price_step_minutes: spacing of those values (default: one interval). Must be a
+            multiple of interval_minutes; see encode_prices() for how quarter-hours are
+            averaged into each value.
+        price_encoding: "raw" (EUR/kWh as-is — the original state) or "window"
+            (min-max within the window + level + spread, all bounded).
+        price_scale: fixed scale for "window" level/spread. When None it is computed
+            once here as the 99th percentile of |price| over price_scale_period (e.g.
+            the training sessions' time span), and deliberately NOT recomputed by
+            reload_data() — same rule as every other normalisation constant.
         """
         self.components = components
         self.interval_minutes = interval_minutes
         self.interval_td = pd.Timedelta(minutes=interval_minutes)
-        self.price_horizon = price_horizon
+        self.price_horizon = int(price_horizon)
         self.skip_empty = skip_empty
+        self.price_step_minutes = interval_minutes if price_step_minutes is None else int(price_step_minutes)
+        self.price_encoding = price_encoding
+
+        if price_encoding not in PRICE_ENCODINGS:
+            raise ValueError(f"price_encoding must be one of {PRICE_ENCODINGS}, got {price_encoding!r}")
+        if self.price_horizon < 1:
+            raise ValueError("price_horizon must be >= 1")
+        if self.price_step_minutes < interval_minutes or self.price_step_minutes % interval_minutes:
+            raise ValueError(f"price_step_minutes ({self.price_step_minutes}) must be a positive "
+                             f"multiple of interval_minutes ({interval_minutes})")
 
         # precompute action / state slices for each component
         self._action_slices, self._state_slices = [], []
@@ -150,6 +212,8 @@ class EnergyEnv:
             self._state_slices.append(slice(s, s + c.n_state_features)); s += c.n_state_features
 
         self._load_prices(price_df)
+        self.price_scale = (float(price_scale) if price_scale is not None
+                            else self._compute_price_scale(price_scale_period))
         self.current_time: Optional[pd.Timestamp] = None
         self.done = False
 
@@ -209,11 +273,40 @@ class EnergyEnv:
         np.clip(idx, 0, None, out=idx)
         return self._price_values[idx].tolist()
 
+    def _compute_price_scale(self, period: Optional[tuple]) -> float:
+        values, times = self._price_values, self._price_times
+        if period is not None:
+            lo, hi = (np.datetime64(pd.Timestamp(x), "ns") for x in period)
+            mask = (times >= lo) & (times <= hi)
+            if mask.any():
+                values = values[mask]
+        scale = float(np.quantile(np.abs(values), 0.99)) if len(values) else 1.0
+        return scale if scale > 1e-6 else 1.0
+
+    def price_features(self, t: pd.Timestamp) -> list[float]:
+        quarters = self._prices([t + k * self.interval_td for k in range(self.prices_required)])
+        return encode_prices(quarters, self.price_horizon, self.price_step_minutes // self.interval_minutes,
+                             self.price_encoding, self.price_scale)
+
     # ── sizes ─────────────────────────────────────────────────────────────────
 
     @property
+    def prices_required(self) -> int:
+        """Consecutive quarter-hour prices needed per decision (what a live caller sends)."""
+        return 1 + (self.price_horizon - 1) * (self.price_step_minutes // self.interval_minutes)
+
+    @property
+    def n_price_features(self) -> int:
+        return self.price_horizon + (2 if self.price_encoding == "window" else 0)
+
+    @property
+    def state_prefix(self) -> int:
+        """Index where the component blocks start: price features + sin/cos time."""
+        return self.n_price_features + 2
+
+    @property
     def observation_size(self) -> int:
-        return self.price_horizon + 2 + sum(c.n_state_features for c in self.components)
+        return self.state_prefix + sum(c.n_state_features for c in self.components)
 
     @property
     def action_size(self) -> int:
@@ -222,11 +315,31 @@ class EnergyEnv:
     # ── normalisation state (persisted alongside checkpoints) ─────────────────
 
     def get_norm_state(self) -> dict:
-        """Collect every component's normalisation constants, keyed by class name."""
-        return {type(c).__name__: c.get_norm_state() for c in self.components}
+        """Collect every component's normalisation constants, keyed by class name,
+        plus the env's own price encoding under "EnergyEnv"."""
+        state = {type(c).__name__: c.get_norm_state() for c in self.components}
+        state["EnergyEnv"] = {
+            "price_encoding": self.price_encoding,
+            "price_horizon": int(self.price_horizon),
+            "price_step_minutes": int(self.price_step_minutes),
+            "price_scale": float(self.price_scale),
+        }
+        return state
 
     def set_norm_state(self, state: dict) -> None:
         """Restore normalisation constants captured by get_norm_state()."""
+        env_state = (state or {}).get("EnergyEnv")
+        if env_state:
+            # these change the state layout, so they must already match (the caller
+            # builds the env from the checkpoint's metadata); only the scale is restored
+            for key, mine in (("price_encoding", self.price_encoding),
+                              ("price_horizon", self.price_horizon),
+                              ("price_step_minutes", self.price_step_minutes)):
+                if key in env_state and env_state[key] != mine:
+                    raise ValueError(f"Checkpoint was trained with {key}={env_state[key]!r} "
+                                     f"but this env uses {mine!r}; the state vector would not line up.")
+            if "price_scale" in env_state:
+                self.price_scale = float(env_state["price_scale"])
         for c in self.components:
             payload = (state or {}).get(type(c).__name__)
             if payload:
@@ -236,7 +349,7 @@ class EnergyEnv:
 
     def _build_state(self) -> np.ndarray:
         t = self.current_time + self.interval_td
-        prices = self._prices([t + k * self.interval_td for k in range(self.price_horizon)])
+        prices = self.price_features(t)
         frac = (t.hour * 60 + t.minute) / 1440
         time_enc = [np.sin(2 * np.pi * frac), np.cos(2 * np.pi * frac)]
         feats = []
@@ -360,7 +473,7 @@ class EnergyEnv:
 
     def normalize_state(self, state: np.ndarray) -> np.ndarray:
         out = state.copy()
-        prefix = self.price_horizon + 2
+        prefix = self.state_prefix
         for c, sl in zip(self.components, self._state_slices):
             out[prefix + sl.start: prefix + sl.stop] = c.normalize_state_slice(out[prefix + sl.start: prefix + sl.stop])
         return out

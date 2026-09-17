@@ -53,7 +53,16 @@ class PVComponent(BaseComponent):
         time_col: str = "Timestamp",
         production_col: str = "Production_kWh",
         consumption_col: str = "Consumption_kWh",
+        clip_features: bool = False,
     ):
+        """
+        clip_features: cap the normalised forecast at 1.0. norm_max_kwh is the maximum
+            of the historical series, so training never exceeds 1 — but a live forecast
+            can, which would put the network outside the range it was trained on (the
+            same failure EVComponent.clip_features guards against). Persisted in
+            metadata; absent (pre-change checkpoints) means unclipped.
+        """
+        self.clip_features = clip_features
         pv_df = pv_df.copy()
         if time_col not in pv_df.columns or production_col not in pv_df.columns:
             raise KeyError(f"pv_df must have '{time_col}' and '{production_col}' columns; got {list(pv_df.columns)}")
@@ -139,10 +148,11 @@ class PVComponent(BaseComponent):
     # ── state ─────────────────────────────────────────────────────────────────
 
     def get_state_features(self, t: pd.Timestamp) -> list[float]:
-        return [
+        feats = [
             self._get_net_kwh(t + k * self.interval_td) / self.norm_max_kwh
             for k in range(self.forecast_horizon)
         ]
+        return [min(v, 1.0) for v in feats] if self.clip_features else feats
 
     # ── no-ops (PV has no actions, no departures) ─────────────────────────────
 
@@ -179,11 +189,13 @@ class PVComponent(BaseComponent):
         return {
             "norm_max_kwh": float(self.norm_max_kwh),
             "forecast_horizon": int(self.forecast_horizon),
+            "clip_features": bool(self.clip_features),
         }
 
     def set_norm_state(self, state: dict) -> None:
         if "norm_max_kwh" in state:
             self.norm_max_kwh = float(state["norm_max_kwh"])
+        self.clip_features = bool(state.get("clip_features", False))
         saved_horizon = state.get("forecast_horizon")
         if saved_horizon is not None and int(saved_horizon) != self.forecast_horizon:
             raise ValueError(

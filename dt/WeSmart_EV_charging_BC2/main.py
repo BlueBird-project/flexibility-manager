@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))  # folder with main.py and 'sr
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from src.agent.dqn_agent_new import DQNAgent, METADATA_FILENAME, Q_FILENAME, Q_TARGET_FILENAME
+from src.agent.dqn_agent_new import DQNAgent, DQNConfig, METADATA_FILENAME, Q_FILENAME, Q_TARGET_FILENAME
 from src.env.base_env import EnergyEnv
 from src.env.ev_component import EVComponent
 from src.env.pv_component import PVComponent
@@ -55,14 +55,19 @@ FIXED_PENALTY = 10.0
 EPISODES = 50
 SEED = 1
 TEST_SIZE = 0.3
+# Carved out of what would otherwise be training data, chronologically between train
+# and test, and used only to choose which episode's weights to keep.
+VAL_SIZE = 0.15
 
 # Live deployment contract (see service/inference_server.py): both are
 # forward-looking, quarter-hour resolution, 1-hour lookahead. Belgian day-ahead
 # prices are a known schedule by decision time (no forecast error); PV is a real
 # forecast with error the model never sees during training — kept short for
 # that reason. Changing either requires retraining and redeploying together.
-PRICE_HORIZON = 4  # M: price(t), price(t+1), ..., price(t+3), EUR/kWh
-PV_HORIZON = 4      # N: net PV kWh available for charging, same cadence
+PRICE_HORIZON = 12        # M: price values in the state
+PRICE_STEP_MINUTES = 30   # ...spaced 30 min apart: current quarter-hour, then 11 half-hour means (6 h)
+PRICE_ENCODING = "window" # min-max within the window + level + spread; see base_env.encode_prices
+PV_HORIZON = 4            # N: net PV kWh available for charging, 15-min cadence
 
 
 def set_seeds(seed: int = SEED):
@@ -231,18 +236,28 @@ def make_env(price_df: pd.DataFrame, sessions_df: pd.DataFrame, pv_df: pd.DataFr
              consumption_df: pd.DataFrame = None, power_kw: float = POWER_KW,
              penalty_per_kwh: float = PENALTY_PER_KWH, fixed_penalty: float = FIXED_PENALTY,
              progress_penalty: float | None = None, price_horizon: int = PRICE_HORIZON,
-             pv_horizon: int = PV_HORIZON, verbose: bool = True) -> EnergyEnv:
+             pv_horizon: int = PV_HORIZON, clip_features: bool = True,
+             price_step_minutes: int = PRICE_STEP_MINUTES, price_encoding: str = PRICE_ENCODING,
+             verbose: bool = True) -> EnergyEnv:
     ev = EVComponent(
         sessions_df,
         power_kw=power_kw,
         penalty_per_kwh=penalty_per_kwh,
         fixed_penalty=fixed_penalty,
         progress_penalty=progress_penalty,
+        clip_features=clip_features,
     )
     comps = [ev]
     if pv_df is not None:
-        comps.append(PVComponent(pv_df, consumption_df=consumption_df, forecast_horizon=pv_horizon))
-    env = EnergyEnv(price_df, components=comps, price_horizon=price_horizon)
+        comps.append(PVComponent(pv_df, consumption_df=consumption_df, forecast_horizon=pv_horizon,
+                                 clip_features=clip_features))
+    # price scale comes from the span of the sessions the env is built on (the train
+    # split), then stays frozen across reload_data() like every other constant
+    sessions_period = (pd.to_datetime(sessions_df["arrival"]).min(),
+                       pd.to_datetime(sessions_df["departure"]).max())
+    env = EnergyEnv(price_df, components=comps, price_horizon=price_horizon,
+                    price_step_minutes=price_step_minutes, price_encoding=price_encoding,
+                    price_scale_period=sessions_period)
 
     if verbose:
         print("─" * 50)
@@ -256,12 +271,53 @@ def make_env(price_df: pd.DataFrame, sessions_df: pd.DataFrame, pv_df: pd.DataFr
             print("  PV production : ✗ (not provided)")
         print(f"  Penalties     : {penalty_per_kwh} EUR/kWh unmet + {fixed_penalty} EUR fixed, "
               f"{ev.progress_penalty} EUR/interval behind schedule")
-        print(f"  Price horizon    : {price_horizon} steps (forward-looking)")
+        print(f"  Feature clip  : {'✓ (state features bounded to the training box)' if clip_features else '✗ (legacy, unbounded)'}")
+        span_h = (env.prices_required * env.interval_minutes) / 60
+        if price_encoding == "window":
+            print(f"  Prices        : {price_horizon} values every {price_step_minutes} min ({span_h:g} h ahead), "
+                  f"min-max in window + level + spread (scale {env.price_scale:.4f} EUR/kWh)")
+        else:
+            print(f"  Prices        : {price_horizon} raw values every {price_step_minutes} min ({span_h:g} h ahead)")
         print(f"  Observation size : {env.observation_size}")
         print(f"  Action size      : {env.action_size}")
         print("─" * 50)
 
     return env
+
+
+def make_deadline_guard(env: EnergyEnv, margin: float = None):
+    """
+    Force `charge` on any station that can no longer meet its deadline otherwise.
+
+    Reads only the state vector the network itself is given, so the identical rule
+    can be reproduced by the live service from its own state (see
+    service/inference_server.py). It fires exactly when the env's own
+    behind-schedule test fires, i.e. when
+
+        remaining_kwh > hours_left * power_kw * feasibility_margin
+
+    which in the state block is just `urgency > feasibility_margin`.
+
+    This is a safety layer around the policy, not a change to the DQN: the agent
+    still chooses freely everywhere the deadline is not at risk. It exists because
+    undercharge failures here are driven by rare extreme sessions that no amount of
+    training-side tuning caught reliably, and that the validation split contains no
+    example of.
+    """
+    ev = env.components[0]
+    prefix = env.state_prefix
+    scale = ev.urgency_clip if ev.clip_features else 1.0
+    thr = ev.feasibility_margin if margin is None else margin
+
+    def guard(state_vec, actions):
+        for i in range(ev.n_stations):
+            present = state_vec[prefix + 4 * i]
+            urgency = state_vec[prefix + 4 * i + 3] * scale
+            if present > 0.5 and urgency > thr:
+                actions[i] = 1
+        return actions
+
+    return guard
 
 
 def load_datasets(args: argparse.Namespace):
@@ -292,7 +348,10 @@ def build_env_with_training_norms(args, price_df, train_df, test_df, pv_df, cons
     env = make_env(price_df, train_df, pv_df, consumption_df, power_kw=args.power,
                    penalty_per_kwh=args.penalty_per_kwh, fixed_penalty=args.fixed_penalty,
                    progress_penalty=args.progress_penalty, price_horizon=args.price_horizon,
-                   pv_horizon=args.pv_horizon, verbose=verbose)
+                   pv_horizon=args.pv_horizon, clip_features=not args.legacy_features,
+                   price_step_minutes=args.price_step_minutes, price_encoding=args.price_encoding,
+                   verbose=verbose)
+    # metadata (loaded by the caller) may still override clip_features for an old checkpoint
     env.reload_data(price_df, test_df)
     if verbose:
         print(f"  (env built on {len(train_df)} train sessions to fix normalisation, "
@@ -376,18 +435,43 @@ def cmd_train(args: argparse.Namespace) -> int:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     sessions_df, price_df, pv_df, consumption_df = load_datasets(args)
-    train_df, _eval_df, test_df = split_df(sessions_df, test_size=TEST_SIZE, eval_size=0.0)
-    print(f"Split: train={len(train_df)} test={len(test_df)} (of {len(sessions_df)})")
+    train_df, val_df, test_df = split_df(sessions_df, test_size=TEST_SIZE, eval_size=args.val_size)
+    print(f"Split: train={len(train_df)} val={len(val_df)} test={len(test_df)} (of {len(sessions_df)})")
 
+    clip_features = not args.legacy_features
     env = make_env(price_df, train_df, pv_df, consumption_df, power_kw=args.power,
                    penalty_per_kwh=args.penalty_per_kwh, fixed_penalty=args.fixed_penalty,
                    progress_penalty=args.progress_penalty, price_horizon=args.price_horizon,
-                   pv_horizon=args.pv_horizon, verbose=True)
+                   pv_horizon=args.pv_horizon, clip_features=clip_features,
+                   price_step_minutes=args.price_step_minutes, price_encoding=args.price_encoding,
+                   verbose=True)
 
-    agent = DQNAgent(env.observation_size, env.action_size, save=save_model, save_dir=str(model_dir))
+    # Validation env: same normalisation constants (built on train, then reloaded),
+    # a disjoint chronological slice, and never touched by the test evaluation.
+    val_env = None
+    if not val_df.empty:
+        val_env = make_env(price_df, train_df, pv_df, consumption_df, power_kw=args.power,
+                           penalty_per_kwh=args.penalty_per_kwh, fixed_penalty=args.fixed_penalty,
+                           progress_penalty=args.progress_penalty, price_horizon=args.price_horizon,
+                           pv_horizon=args.pv_horizon, clip_features=clip_features,
+                           price_step_minutes=args.price_step_minutes, price_encoding=args.price_encoding,
+                           verbose=False)
+        val_env.reload_data(price_df, val_df)
+
+    # DQNConfig re-seeds torch/numpy/random on construction, so --seed has to reach
+    # it or every run trains from the same initialisation regardless of the flag.
+    agent = DQNAgent(env.observation_size, env.action_size, cfg=DQNConfig(seed=args.seed),
+                     save=save_model, save_dir=str(model_dir))
+    if not args.no_deadline_guard:
+        agent.action_guard = make_deadline_guard(env)
+        agent.guard_meta = {"kind": "deadline_feasibility",
+                            "margin": float(env.components[0].feasibility_margin)}
+        print(f"  Deadline guard: ✓ (force charge when urgency > "
+              f"{env.components[0].feasibility_margin})")
 
     print("Training Start.....")
-    agent.train(env, verbose=verbose, episodes=args.num_episodes)
+    agent.train(env, verbose=verbose, episodes=args.num_episodes,
+                val_env=val_env, val_every=args.val_every)
 
     # Evaluate on TEST. reload_data keeps the training normalisation constants.
     env.reload_data(price_df, test_df)
@@ -439,12 +523,29 @@ def cmd_test(args: argparse.Namespace) -> int:
         return 2
 
     sessions_df, price_df, pv_df, consumption_df = load_datasets(args)
-    train_df, _eval_df, test_df = split_df(sessions_df, test_size=TEST_SIZE, eval_size=0.0)
-    print(f"Split: train={len(train_df)} test={len(test_df)} (of {len(sessions_df)})")
+    train_df, val_df, test_df = split_df(sessions_df, test_size=TEST_SIZE, eval_size=args.val_size)
+    print(f"Split: train={len(train_df)} val={len(val_df)} test={len(test_df)} (of {len(sessions_df)})")
+
+    # The state layout (price encoding, horizons) belongs to the checkpoint, not to this
+    # invocation: take it from metadata so `test` needs no matching flags. Checkpoints
+    # predating the price encoding used 4 raw quarter-hour prices.
+    meta = DQNAgent.load_metadata(meta_path)
+    if meta:
+        env_meta = (meta.get("norm_state") or {}).get("EnergyEnv")
+        if env_meta:
+            args.price_encoding = env_meta["price_encoding"]
+            args.price_horizon = int(env_meta["price_horizon"])
+            args.price_step_minutes = int(env_meta["price_step_minutes"])
+        else:
+            args.price_encoding = "raw"
+            args.price_horizon = int(meta.get("price_horizon", 4))
+            args.price_step_minutes = int(meta.get("interval_minutes", 15))
+        pv_meta = (meta.get("norm_state") or {}).get("PVComponent")
+        if pv_meta and "forecast_horizon" in pv_meta:
+            args.pv_horizon = int(pv_meta["forecast_horizon"])
 
     env = build_env_with_training_norms(args, price_df, train_df, test_df, pv_df, consumption_df)
 
-    meta = DQNAgent.load_metadata(meta_path)
     if meta:
         if meta.get("observation_size") != env.observation_size or meta.get("action_size") != env.action_size:
             print(f"[ERROR] Checkpoint expects obs={meta.get('observation_size')} "
@@ -453,6 +554,11 @@ def cmd_test(args: argparse.Namespace) -> int:
             return 2
         env.set_norm_state(meta.get("norm_state", {}))
         print(f"Loaded normalisation constants from {meta_path}")
+        # metadata wins over the CLI flag: a checkpoint must be fed the state
+        # convention it was trained under, whatever this run was invoked with.
+        ev_clip = getattr(env.components[0], "clip_features", None)
+        if ev_clip is not None:
+            print(f"  Effective feature clip: {'on' if ev_clip else 'off (pre-fix checkpoint)'}")
     else:
         print(f"[WARN] No {METADATA_FILENAME} next to the checkpoint; using constants derived "
               "from the training split instead. Re-run `train` to regenerate it.")
@@ -464,6 +570,16 @@ def cmd_test(args: argparse.Namespace) -> int:
     agent.q_target.load_state_dict(_load_state_dict(str(q_tgt_path), device, args.allow_unsafe_load))
     agent.q.eval()
     agent.q_target.eval()
+
+    # The guard is part of the policy that was trained, so it has to come from the
+    # checkpoint, not from this invocation's flags.
+    guard_meta = (meta or {}).get("action_guard")
+    if guard_meta:
+        agent.action_guard = make_deadline_guard(env, margin=guard_meta.get("margin"))
+        agent.guard_meta = guard_meta
+        print(f"  Deadline guard: ✓ from checkpoint (margin {guard_meta.get('margin')})")
+    else:
+        print("  Deadline guard: ✗ (checkpoint trained without it)")
 
     if args.save_prefix:
         prefix = args.save_prefix
@@ -500,15 +616,37 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--progress-penalty", type=float, default=None,
                    help="EUR charged each interval an EV is behind schedule "
                         "(default: fixed-penalty/2; set 0 to disable this shaping)")
+    p.add_argument("--price-step-minutes", type=int, default=PRICE_STEP_MINUTES,
+                   help=f"Spacing of the price values in the state, a multiple of 15 (default: "
+                        f"{PRICE_STEP_MINUTES}). The first value is the current quarter-hour; each "
+                        f"later one averages the quarter-hours in its step. `test` takes it from the checkpoint.")
+    p.add_argument("--price-encoding", choices=["window", "raw"], default=PRICE_ENCODING,
+                   help="window: prices min-max scaled within the window plus a price level and "
+                        "spread, all bounded (default). raw: EUR/kWh as-is, the pre-change state. "
+                        "`test` takes it from the checkpoint.")
     p.add_argument("--price-horizon", type=int, default=PRICE_HORIZON,
-                   help=f"Forward-looking price steps in the state, incl. the current one "
-                        f"(default: {PRICE_HORIZON} = 1h at 15-min steps). Must match the live "
-                        f"service's 'prices' array length.")
+                   help=f"Number of forward-looking price values in the state, incl. the current "
+                        f"one (default: {PRICE_HORIZON}; with a {PRICE_STEP_MINUTES}-min step that is "
+                        f"6 h ahead). The live service then needs 1 + (horizon-1) * step/15 "
+                        f"quarter-hour prices per request. `test` takes it from the checkpoint.")
     p.add_argument("--pv-horizon", type=int, default=PV_HORIZON,
                    help=f"Forward-looking PV forecast steps in the state, incl. the current one "
                         f"(default: {PV_HORIZON} = 1h at 15-min steps). Only used with --pv. "
                         f"Must match the live service's 'pv_forecast' array length.")
     p.add_argument("--seed", type=int, default=SEED, help=f"Random seed (default: {SEED})")
+    p.add_argument("--val-size", type=float, default=VAL_SIZE,
+                   help=f"Fraction of sessions held out (chronologically, between train and test) "
+                        f"to pick the best checkpoint (default: {VAL_SIZE}; 0 disables and keeps "
+                        f"whatever the last episode produced). `test` must use the same value as "
+                        f"`train` so the normalisation split lines up.")
+    p.add_argument("--no-deadline-guard", action="store_true",
+                   help="Disable the safety layer that forces charging on a station that can no "
+                        "longer meet its deadline. On by default: undercharge failures here are "
+                        "driven by rare extreme sessions that no training-side setting caught "
+                        "reliably and that the validation split contains no example of.")
+    p.add_argument("--legacy-features", action="store_true",
+                   help="Disable state-feature clipping (reproduces pre-fix checkpoints, which "
+                        "extrapolate on any session bigger/longer than the training maximum)")
     p.add_argument("--verbose", choices=["yes", "no"], default="yes", help="Verbose output (default: yes)")
 
 
@@ -524,6 +662,8 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("--save-model", choices=["yes", "no"], default="yes", help="Save checkpoints (default: yes)")
     pt.add_argument("--num_episodes", type=int, default=EPISODES,
                     help=f"Number of training episodes (default: {EPISODES})")
+    pt.add_argument("--val-every", type=int, default=1,
+                    help="Run the validation evaluation every N episodes (default: 1)")
     pt.set_defaults(func=cmd_train)
 
     pe = sub.add_parser("test", help="Load q/q_target and evaluate on the test split (policy & always-charge).")

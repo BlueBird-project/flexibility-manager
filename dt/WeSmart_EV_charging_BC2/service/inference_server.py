@@ -24,7 +24,9 @@ POST /decide   -> one 15-min-step decision. Body:
   - stations: one entry per station the model was trained on (see /health for
     the expected station_ids and order-independent — matched by station_id).
     present=0 stations may omit remaining_kwh/hours_to_departure.
-  - prices: EUR/kWh, forward-looking, length == price_horizon from /health.
+  - prices: EUR/kWh, consecutive quarter-hour prices starting at `timestamp`,
+    length == prices_required from /health (23 for the default 12 values x 30 min;
+    the service does the averaging and normalisation itself).
     prices[0] is the price for `timestamp` itself. Belgian day-ahead prices
     are hourly — repeat each hourly value 4x to fill the quarter-hours it
     covers before sending.
@@ -60,7 +62,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.agent.helpers.NN.NN import QNetwork  # noqa: E402
-from service.state_builder import StateBuilder, StateBuilderError  # noqa: E402
+from service.state_builder import StateBuilder, StateBuilderError, apply_deadline_guard  # noqa: E402
 
 METADATA_FILENAME = "metadata.json"
 Q_FILENAME = "q_state_dict.pth"
@@ -95,6 +97,11 @@ class ModelBundle:
         self.net.load_state_dict(state_dict)
         self.net.eval()
 
+        # None when the checkpoint was trained without the guard, so an old model keeps
+        # being served exactly the policy it was trained with.
+        guard = self.meta.get("action_guard") or {}
+        self.guard_margin = float(guard["margin"]) if guard.get("margin") is not None else None
+
     def decide(self, payload: dict) -> dict:
         if "timestamp" not in payload:
             raise StateBuilderError("'timestamp' is required")
@@ -122,6 +129,10 @@ class ModelBundle:
             q = self.net(s).view(n_stations, 2)
             actions = q.argmax(dim=-1).cpu().numpy().astype(int).tolist()
 
+        # Deadline feasibility guard — the same rule the policy was trained under
+        # (main.make_deadline_guard); no-op when the checkpoint predates it.
+        actions = apply_deadline_guard(state, actions, self.state_builder, self.guard_margin)
+
         # Training never applies the action bit when no EV is present
         # (EVComponent.apply_actions: `charging = sess is not None and action == 1`) —
         # the network is never trained to produce a meaningful value there, so don't
@@ -140,10 +151,19 @@ class ModelBundle:
             "station_ids": sb.station_ids,
             "power_kw": sb.power_kw,
             "price_horizon": sb.price_horizon,
+            # what a request must send: this many consecutive quarter-hour prices
+            "prices_required": sb.prices_required,
+            "price_step_minutes": sb.price_step_minutes,
+            "price_encoding": sb.price_encoding,
             "has_pv": sb.has_pv,
             "pv_horizon": sb.pv_horizon,
             "interval_minutes": sb.interval_minutes,
             "observation_size": sb.observation_size,
+            # which state convention this checkpoint was trained under; false means a
+            # pre-fix model that extrapolates on sessions larger than its training max
+            "clip_features": sb.clip_features,
+            # margin of the deadline guard applied on top of the policy, or null
+            "deadline_guard_margin": self.guard_margin,
         }
 
 

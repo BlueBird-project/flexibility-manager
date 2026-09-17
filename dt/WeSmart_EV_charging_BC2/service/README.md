@@ -33,13 +33,21 @@ Returns the loaded model's configuration, so a caller can self-check before wiri
   "status": "ok",
   "station_ids": [1, 2],
   "power_kw": 9.0,
-  "price_horizon": 4,
+  "price_horizon": 12,
+  "prices_required": 23,
+  "price_step_minutes": 30,
+  "price_encoding": "window",
   "has_pv": true,
   "pv_horizon": 4,
   "interval_minutes": 15,
-  "observation_size": 18
+  "observation_size": 18,
+  "clip_features": true,
+  "deadline_guard_margin": 0.96
 }
 ```
+
+`clip_features` and `deadline_guard_margin` describe how the checkpoint was trained and are applied
+automatically — `false` / `null` means a pre-fix checkpoint, served exactly as it was trained.
 
 ### `POST /decide`
 One decision for one 15-minute interval.
@@ -52,7 +60,7 @@ One decision for one 15-minute interval.
     {"station_id": 1, "present": 1, "remaining_kwh": 12.4, "hours_to_departure": 2.5},
     {"station_id": 2, "present": 0}
   ],
-  "prices": [0.142, 0.138, 0.130, 0.125],
+  "prices": [0.142, 0.138, 0.130, 0.125, "... 23 values in total ..."],
   "pv_forecast": [1.8, 2.1, 2.4, 2.6]
 }
 ```
@@ -61,7 +69,7 @@ One decision for one 15-minute interval.
 |---|---|
 | `timestamp` | Local wall-clock time (same convention as the training data — no timezone conversion applied) of the interval this decision is for. |
 | `stations` | One entry per station the model was trained on — see `/health` for the expected `station_ids` (order doesn't matter, matched by id). A `present: 0` station may omit `remaining_kwh`/`hours_to_departure`. |
-| `prices` | €/kWh, **forward-looking**, length must equal `price_horizon` from `/health`. `prices[0]` is the price for `timestamp` itself. Belgian day-ahead prices are hourly — repeat each hourly value 4× to fill the quarter-hours it covers before sending. |
+| `prices` | €/kWh, **consecutive quarter-hour prices** starting at `timestamp` (`prices[0]` is the price for `timestamp` itself, `prices[1]` 15 min later, ...). Length must equal `prices_required` from `/health` — 23 (5 h 45 min) for current models, 4 for models trained before the price change. Send plain prices: the service averages them into 30-min blocks and normalises them itself. If a source only gives hourly prices, repeat each hourly value 4×. |
 | `pv_forecast` | Net kWh available for EV charging (production minus building consumption, already floored at 0) per quarter-hour, forward-looking, length must equal `pv_horizon`. Omit entirely if `/health` reports `has_pv: false`; required if `true`. |
 
 **Response:**
@@ -78,6 +86,11 @@ One decision for one 15-minute interval.
 A station reported `present: 0` always comes back `charge: 0` — the network was never trained to produce a
 meaningful decision for an empty station (training ignores the action bit there too), so the service doesn't
 forward whatever it happened to output.
+
+When `/health` reports a `deadline_guard_margin`, a present station that can no longer finish in time
+(`remaining_kwh > hours_to_departure * power_kw * margin`) always comes back `charge: 1`, whatever the
+network chose. This is the same rule the model was trained under; see `apply_deadline_guard` in
+`state_builder.py`.
 
 **Errors** are `400` with `{"error": "..."}` for anything wrong with the request (wrong array length, unknown
 station id, missing PV forecast, malformed JSON, ...) and `500` for anything unexpected (logged with a full

@@ -3,11 +3,17 @@
 # Trade-off vs. the main Dockerfile: a new/retrained model means rebuilding
 # this image, not just restarting a container against a different folder.
 #
-# Build (choose which saved_models/<run> to bake in):
-#   docker build -f Dockerfile.release --build-arg MODEL_RUN=EV -t ev-dqn-inference:ev-v1 .
+# One Dockerfile for every setup — MODEL_RUN picks which saved_models/<run> to bake in:
+#   EV only           docker build -f Dockerfile.release --build-arg MODEL_RUN=EV         -t ev-dqn-inference:ev-v1 .
+#   EV + PV           docker build -f Dockerfile.release --build-arg MODEL_RUN=EV_PV      -t ev-dqn-inference:ev-pv-v1 .
+#   EV + PV + load    docker build -f Dockerfile.release --build-arg MODEL_RUN=EV_PV_Cons -t ev-dqn-inference:ev-pv-cons-v1 .
 #
-# Recipient runs it with nothing else needed:
-#   docker run -p 8080:8080 ev-dqn-inference:ev-v1
+# Recipient runs it with nothing else needed (pick a free host port per container):
+#   docker run -d -p 8080:8080 --restart unless-stopped --name ev-dqn    ev-dqn-inference:ev-v1
+#   docker run -d -p 8081:8080 --restart unless-stopped --name ev-dqn-pv ev-dqn-inference:ev-pv-v1
+#
+# The checkpoint's metadata.json carries everything setup-specific (PV inputs, feature
+# clipping, deadline guard), so the image itself needs no per-setup changes.
 
 FROM python:3.11-slim
 

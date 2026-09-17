@@ -58,27 +58,40 @@ During each timestep:
 
 ### State representation
 At every decision step, the environment returns a flattened numeric vector containing:
-1. Price signal: `--price-horizon` (M, default 4) **forward-looking** prices, starting at the interval about
-   to be decided. Belgian day-ahead prices are published a day ahead, so this is a known schedule the live
-   service can supply exactly, not a forecast with error.
+1. Price signal: `--price-horizon` (M, default 12) **forward-looking** price values spaced
+   `--price-step-minutes` apart (default 30), i.e. about 6 h ahead. The first value is the exact price of the
+   interval about to be decided; each later one is the average of the quarter-hours in its 30-min block.
+   Belgian day-ahead prices are published a day ahead, so this is a known schedule the live service can
+   supply exactly, not a forecast with error. With the default `--price-encoding window` these are
+   **min-max scaled within the window** (0 = cheapest of the 12, 1 = most expensive; a flat window is 0.5),
+   because when to charge depends on how a price compares with what is coming, and absolute levels shift a
+   lot between seasons. Two more values keep the absolute information: the current **price level**
+   (price / 99th percentile of training prices, clipped to [-1, 1]) and the window's **spread** (max - min,
+   same scale, clipped to [0, 1]), so a nearly flat night is not mistaken for a big opportunity.
 2. Time of day encoding: for representing the time, sine and cosine encoding are used
 (sin(2π·time) and cos(2π·time))
 3. For each station, a block of 4 values: EV present (0/1), remaining kWh, hours to departure,
-and urgency (remaining energy / max possible charge time)
+and urgency (remaining energy / max possible charge time). Remaining kWh and hours are divided by the
+training split's maxima and **clipped to [0, 1]**; urgency is clipped at 2 and rescaled to [0, 1]. Without
+the clip, a session larger than anything in training pushes the network outside the range it ever saw
+(the test split has one at 1.5x), and urgency is otherwise unbounded.
 4. If PV is attached, `--pv-horizon` (N, default 4) more values: **forward-looking** net PV kWh available for
-   charging, same convention. Unlike prices, this genuinely is a forecast at inference time — training reads
-   it straight off the historical production series (perfect foresight), so keep the horizon short to limit
-   how much a real forecast's error can differ from what the model saw during training.
+   charging, same convention, divided by the historical maximum and clipped to [0, 1]. Unlike prices, this
+   genuinely is a forecast at inference time — training reads it straight off the historical production
+   series (perfect foresight), so keep the horizon short to limit how much a real forecast's error can
+   differ from what the model saw during training.
 
-The state will look like this (defaults, one PV component attached):
+**Every input is bounded** to [0, 1] or [-1, 1]; `service/test_state_parity.py` asserts it.
+
+The state will look like this (defaults, one PV component attached — 28 values; 24 without PV):
 ~~~
 [
- price_t, price_t+1, price_t+2, price_t+3,     # M = 4
- sin_time, cos_time,
- [present_1, remaining_1, hours_left_1, urgency_1],
+ p_0, p_1, ..., p_11,                          # 12 window-scaled prices, 30 min apart   [0, 1]
+ price_level, price_spread,                    #                                  [-1, 1], [0, 1]
+ sin_time, cos_time,                           #                                         [-1, 1]
+ [present_1, remaining_1, hours_left_1, urgency_1],   #                                   [0, 1]
  [present_2, remaining_2, hours_left_2, urgency_2],
- ...
- pv_t, pv_t+1, pv_t+2, pv_t+3                  # N = 4, only when --pv is used
+ pv_t, pv_t+1, pv_t+2, pv_t+3                  # only when --pv is used                  [0, 1]
 ]
 ~~~
 
@@ -96,6 +109,19 @@ The reward is constructed from:
 This combination encourages the agent to get minimum costs, minimum unmet energy, and respect charging deadlines.
 Note the behind-schedule term compounds over a session, so it can dominate the cost term — set
 `--progress-penalty 0` to train against the terminal penalty alone.
+
+### Deadline guard
+On top of the network's choice, any station that can no longer meet its deadline is forced to charge:
+
+~~~
+remaining_kwh > hours_to_departure * power_kw * 0.96   ->   charge = 1
+~~~
+
+It is applied during training and evaluation alike (so the network learns with it), saved in `metadata.json`,
+and applied identically by the live service. It exists because the RL policy alone occasionally strands an EV
+on rare, unusually large sessions that neither the training nor the validation data contain an example of;
+in seed sweeps 2 of 5 EV+PV runs left 38–70 kWh undelivered. With the guard, 45 runs across all three setups
+never exceeded 9.6 kWh undelivered, at equal or better cost. Disable with `--no-deadline-guard` (not advised).
 
 ## How to run the project
 Follow this guide to run the project.
@@ -130,9 +156,21 @@ For training the model, by using the default datasets saved in the folder, run:
 
 This command will:
 - Load the dataset and drop sessions that cannot be served at 9 kW
-- Take 70% of the dataset (per station, chronological) for training the DQN
+- Split it per station, chronologically: 55% train, 15% validation, 30% test
+- Train the DQN, scoring the greedy policy on the validation split after every episode and keeping the
+  **best-scoring weights** (not simply the last episode's)
 - Save the trained model in [saved_models](saved_models), together with a `metadata.json`
-- Evaluate on the remaining 30% and against the always-charge baseline
+- Evaluate on the test split and against the always-charge baseline
+
+The same command works for every setup; add `--pv` and/or `--consumption` for EV+PV and EV+PV+building load.
+
+### Choosing a model to ship
+A single training run is one draw from a wide distribution — identical settings can differ by several
+percent in cost depending only on `--seed`. To pick a model, train a few seeds, compare the
+`Restored best-validation weights from episode N (VAL reward X)` line each prints, and keep the seed with
+the **highest VAL reward**. Select on validation, never on the test numbers. Training is deterministic per
+seed, so re-running the winner reproduces it exactly. The committed checkpoints were chosen this way from
+15 seeds each.
 
 ### Test the model
 To test the model, by using the models saved in [saved_models](saved_models), run:
@@ -163,9 +201,14 @@ Shared by both subcommands:
 | `--penalty-per-kwh FLOAT` | `5.0` | € per kWh unmet at departure |
 | `--fixed-penalty FLOAT` | `10.0` | Flat € for an undercharged departure |
 | `--progress-penalty FLOAT` | `fixed-penalty / 2` | € per interval while behind schedule; `0` disables |
-| `--price-horizon INT` | `4` | Forward-looking price steps in the state (M); must match the live service |
+| `--price-horizon INT` | `12` | Number of forward-looking price values in the state (M) |
+| `--price-step-minutes INT` | `30` | Spacing of those values, a multiple of 15 (e.g. `15`, `30`, `60`) |
+| `--price-encoding window/raw` | `window` | `window`: min-max within the window + level + spread; `raw`: EUR/kWh as-is (pre-change) |
 | `--pv-horizon INT` | `4` | Forward-looking PV forecast steps in the state (N); must match the live service |
 | `--seed INT` | `1` | Random seed |
+| `--val-size FLOAT` | `0.15` | Validation fraction used to pick the best weights; `0` keeps the last episode. Use the same value for `train` and `test` |
+| `--no-deadline-guard` | off | Disable the deadline guard (not advised) |
+| `--legacy-features` | off | Disable feature clipping (only to reproduce pre-fix checkpoints) |
 | `--verbose yes/no` | `yes` | Detailed printing |
 
 `train` only:
@@ -174,6 +217,11 @@ Shared by both subcommands:
 |---|---|---|
 | `--num_episodes INT` | `50` | Training episodes |
 | `--save-model yes/no` | `yes` | Write checkpoints |
+| `--val-every INT` | `1` | Evaluate on the validation split every N episodes |
+
+For `test`, the price settings, clipping and the guard are all taken from the checkpoint's `metadata.json`,
+not from these flags, so a model is always evaluated the way it was trained — including checkpoints from
+before the price change, which still use 4 raw prices.
 
 `test` only:
 

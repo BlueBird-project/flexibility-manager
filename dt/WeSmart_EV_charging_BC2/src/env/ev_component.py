@@ -13,6 +13,14 @@ class Session(NamedTuple):
     need_kwh: float
 
 
+# urgency = remaining_kwh / (hours_left * power_kw): 1.0 means "must charge at full
+# power every remaining interval", >1 means already infeasible. Every control-relevant
+# distinction lives below 2.0, but the raw ratio is unbounded as hours_left -> 0 (it hits
+# 16 on train and 21 on test under an exploring policy), which puts a single feature 20x
+# above the 0..1 scale of every other input. Clip there and rescale to the unit box.
+URGENCY_CLIP = 2.0
+
+
 class EVComponent(BaseComponent):
     """
     EV charging logic as a pluggable component.
@@ -34,6 +42,7 @@ class EVComponent(BaseComponent):
         progress_penalty: float | None = None,
         feasibility_margin: float = 0.96,
         full_tolerance: float = 0.04,
+        clip_features: bool = True,
     ):
         """
         power_kw:            constant charging rate used for every station.
@@ -49,6 +58,13 @@ class EVComponent(BaseComponent):
                              track.
         full_tolerance:      fraction of the requirement that may remain at
                              departure without counting as undercharged.
+        clip_features:       keep the normalised state features inside the [0, 1]
+                             box the training split defines. Without it a session
+                             larger or longer than anything in training (the test
+                             split has one at 1.54x norm_max_kwh and 1.51x
+                             norm_max_hours) pushes the network outside the domain
+                             it ever saw, where a ReLU MLP extrapolates freely.
+                             Set False only to reproduce pre-fix checkpoints.
         """
         self.power_kw = power_kw
         self.interval_minutes = interval_minutes
@@ -58,6 +74,8 @@ class EVComponent(BaseComponent):
         self.progress_penalty = fixed_penalty / 2 if progress_penalty is None else progress_penalty
         self.feasibility_margin = feasibility_margin
         self.full_tolerance = full_tolerance
+        self.clip_features = clip_features
+        self.urgency_clip = URGENCY_CLIP
 
         self._set_sessions(sessions_df)
 
@@ -304,6 +322,12 @@ class EVComponent(BaseComponent):
         for i in range(self.n_stations):
             out[4 * i + 1] /= self.norm_max_kwh    # remaining_kwh
             out[4 * i + 2] /= self.norm_max_hours  # hours_left
+            if self.clip_features:
+                # norm_max_* are the train split's maxima, so these are <=1 by
+                # construction on train but not on any other split.
+                out[4 * i + 1] = min(out[4 * i + 1], 1.0)
+                out[4 * i + 2] = min(out[4 * i + 2], 1.0)
+                out[4 * i + 3] = min(out[4 * i + 3], self.urgency_clip) / self.urgency_clip
         return out
 
     def get_norm_state(self) -> dict:
@@ -312,6 +336,8 @@ class EVComponent(BaseComponent):
             "norm_max_hours": float(self.norm_max_hours),
             "power_kw": float(self.power_kw),
             "station_ids": [int(s) for s in self.station_ids],
+            "clip_features": bool(self.clip_features),
+            "urgency_clip": float(self.urgency_clip),
         }
 
     def set_norm_state(self, state: dict) -> None:
@@ -319,6 +345,9 @@ class EVComponent(BaseComponent):
             self.norm_max_kwh = float(state["norm_max_kwh"])
         if "norm_max_hours" in state:
             self.norm_max_hours = float(state["norm_max_hours"])
+        # absent in pre-fix checkpoints, which were trained unclipped
+        self.clip_features = bool(state.get("clip_features", False))
+        self.urgency_clip = float(state.get("urgency_clip", URGENCY_CLIP))
         saved_stations = state.get("station_ids")
         if saved_stations is not None and [int(s) for s in self.station_ids] != list(saved_stations):
             raise ValueError(
