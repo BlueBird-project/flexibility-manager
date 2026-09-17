@@ -15,7 +15,14 @@ ROOT = os.path.dirname(os.path.abspath(__file__))  # folder with main.py and 'sr
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# Training/eval logs print '€' and 'ε'; on Windows the console's default
+# code page (cp1252) can't encode them and print() crashes mid-run.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
+
 import argparse
+import json
 from pathlib import Path
 import random
 import sys
@@ -96,6 +103,15 @@ FIXED_PENALTY = 10
 EPISODES = 50
 SEED = 1
 
+# Shared power cap (kW) across all stations, e.g. a feeder/transformer limit.
+# None disables it (no change from prior behavior). When set, at most
+# floor(POWER_LIMIT_KW / POWER) stations can charge in the same interval;
+# the rest are curtailed that interval regardless of their action (see
+# EVChargingEnv._select_charging_stations). Shared by train and test since
+# both call make_env(), so there's no risk of the two commands disagreeing
+# on the cap.
+POWER_LIMIT_KW = None
+
 
 def set_seeds(seed: int = SEED):
     np.random.seed(seed)
@@ -129,12 +145,59 @@ def make_env(price_df: pd.DataFrame, sessions_df: pd.DataFrame) -> EVChargingEnv
         sessions_df=sessions_df,
         power_kw=POWER,
         interval_minutes=15,
-        price_window=6,
+        price_window=12,
         penalty_per_kwh=PENALTY_PER_KWH,
         fixed_penalty=FIXED_PENALTY,
         skip_empty=True,
+        power_limit_kw=POWER_LIMIT_KW,
     )
     return env
+
+
+# -----------------------------
+# Env metadata (station set + normalization constants)
+#
+# The env's station list and its `norm_max_hours` / `norm_max_kwh`
+# normalization constants are fixed at construction time from whichever
+# sessions_df is passed in. `train` builds the env from train_df, so that's
+# what the saved Q-network was actually trained against. `test` loads a
+# checkpoint in a separate process/run and, without this metadata, would
+# instead derive the station set/normalization from test_df alone -- which
+# can have a different (usually smaller, since low-session stations never
+# make it into the test split) station set and different scale, silently
+# (or, if dimensions mismatch, loudly) breaking the loaded weights. Saving
+# this alongside the checkpoint lets `test` reconstruct the exact env
+# structure/scale training used.
+# -----------------------------
+def _to_native(v):
+    return v.item() if hasattr(v, "item") else v
+
+
+def save_env_meta(env: EVChargingEnv, model_dir: Path) -> None:
+    meta = {
+        "station_ids": [_to_native(s) for s in env.station_ids],
+        "norm_max_hours": float(env.norm_max_hours),
+        "norm_max_kwh": float(env.norm_max_kwh),
+    }
+    with open(model_dir / "env_meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+def load_env_meta(model_dir: Path):
+    path = model_dir / "env_meta.json"
+    if not path.exists():
+        return None
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def apply_env_meta(env: EVChargingEnv, meta: dict) -> None:
+    """Overwrite env's station set & normalization constants with training-time values."""
+    env.station_ids = meta["station_ids"]
+    env.n_stations = len(env.station_ids)
+    env.station_idx = {sid: i for i, sid in enumerate(env.station_ids)}
+    env.norm_max_hours = meta["norm_max_hours"]
+    env.norm_max_kwh = meta["norm_max_kwh"]
 
 
 # -----------------------------
@@ -160,6 +223,9 @@ def cmd_train(args: argparse.Namespace) -> int:
     train_df, _, test_df = split_df(sessions_df, test_size=0.3, eval_size=0.0)
 
     env = make_env(price_df=price_df, sessions_df=train_df)
+
+    if save_model:
+        save_env_meta(env, model_dir)
 
     # Agent (save flag is honored by agent_cl.DQNAgent)
     agent = DQNAgent(env.observation_size, env.action_size, save=save_model)
@@ -261,6 +327,27 @@ def cmd_test(args: argparse.Namespace) -> int:
     _, _, test_df = split_df(sessions_df, test_size=0.3, eval_size=0.0)
 
     env = make_env(price_df=price_df, sessions_df=test_df)
+
+    # Reconstruct the training-time station set & normalization constants (see
+    # save_env_meta/apply_env_meta) so the env matches what the checkpoint was
+    # trained against, rather than being derived from the test set alone.
+    meta_dir = q_path.parent
+    meta = load_env_meta(meta_dir)
+    if meta is not None:
+        apply_env_meta(env, meta)
+        if verbose:
+            print(
+                f"[INFO] Applied training-time env metadata from {meta_dir / 'env_meta.json'} "
+                f"(stations={env.n_stations}, norm_max_hours={env.norm_max_hours:.3f}, "
+                f"norm_max_kwh={env.norm_max_kwh:.3f})"
+            )
+    else:
+        print(
+            f"[WARN] No env_meta.json found in {meta_dir}. Falling back to a station set and "
+            f"normalization derived from the test data alone, which may not match what the "
+            f"checkpoint was trained on (dimensions may even mismatch and fail to load). "
+            f"Re-run `train` to regenerate this file alongside the checkpoint."
+        )
 
     # Build agent with matching dims, then load q and q_target
     agent = DQNAgent(env.observation_size, env.action_size, save=False)

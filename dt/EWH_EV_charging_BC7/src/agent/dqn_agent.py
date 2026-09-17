@@ -318,14 +318,6 @@ class DQNAgent:
             avg_cost_per_car = (row["energy_cost_eur"] / n_cars) if n_cars > 0 else 0.0
             avg_unmet_per_car = (unmet_kwh / n_cars) if n_cars > 0 else 0.0
 
-            if verbose and print_each_episode:
-                print(
-                    f"EPR-TEST | cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
-                    f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}%) | "
-                    f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
-                    f"R={ep_reward:.3f}"
-                )
-
             # if verbose and print_each_episode:
             #     print(
             #         f"req={init_req_kwh:.2f}kWh deliv={ep_delivered:.2f}kWh "
@@ -375,12 +367,13 @@ class DQNAgent:
         #         f"avg_price={summary['avg_price_paid_eur_per_kwh']:.3f}€/kWh "
         #         f"R_avg={summary['avg_episode_reward']:.2f}"
         #     )
-        print(
-            f"EPR-TEST | cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
-            f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}%) | "
-            f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
-            f"R={ep_reward:.3f}"
-        )
+        if verbose:
+            print(
+                f"EPR-TEST | cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
+                f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}%) | "
+                f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
+                f"R={ep_reward:.3f}"
+            )
 
         # Save per-EV session CSV if supported by env
         csv_path = None
@@ -445,8 +438,6 @@ class DQNAgent:
             if np.any(action == 1):
                 ep_charge_time += dt_h
 
-            ep_charge_time += dt_h
-
         price_paid = (ep_cost / ep_delivered) if ep_delivered > 0 else 0.0
         util = (ep_charge_time / ep_time) if ep_time > 0 else 0.0
         row = {
@@ -474,15 +465,6 @@ class DQNAgent:
 
         avg_cost_per_car = (row["energy_cost_eur"] / n_cars) if n_cars > 0 else 0.0
         avg_unmet_per_car = (unmet_kwh / n_cars) if n_cars > 0 else 0.0
-
-        if verbose and print_each_episode:
-            print(
-                f"EPR-RB | "
-                f"cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
-                f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}% ) | "
-                f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
-                f"R={ep_reward:.3f}"
-            )
 
         # if verbose and print_each_episode:
         #     print(
@@ -528,13 +510,14 @@ class DQNAgent:
         #         f"R_avg={summary['avg_episode_reward']:.2f}"
         #     )
 
-        print(
-            f"EPR-RB | "
-            f"cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
-            f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}% ) | "
-            f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
-            f"R={ep_reward:.3f}"
-        )
+        if verbose:
+            print(
+                f"EPR-RB | "
+                f"cost={row['energy_cost_eur']:.2f}€ (avg/car={avg_cost_per_car:.2f}€) | "
+                f"unmet={unmet_kwh:.2f}kWh (avg/car={avg_unmet_per_car:.2f}kWh, {pct_unmet:.2f}% ) | "
+                f"delivered={row['delivered_kwh']:.2f}kWh ({pct_met:.2f}% met) | "
+                f"R={ep_reward:.3f}"
+            )
 
         # Save per-EV session CSV if supported by env
         csv_path = None
