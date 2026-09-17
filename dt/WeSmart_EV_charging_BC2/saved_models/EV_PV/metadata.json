@@ -1,0 +1,57 @@
+{
+  "state_dim": 28,
+  "action_dim": 2,
+  "observation_size": 28,
+  "action_size": 2,
+  "price_horizon": 12,
+  "interval_minutes": 15,
+  "components": [
+    "EVComponent",
+    "PVComponent"
+  ],
+  "norm_state": {
+    "EVComponent": {
+      "norm_max_kwh": 120.4637,
+      "norm_max_hours": 22.25,
+      "power_kw": 9.0,
+      "station_ids": [
+        1,
+        2
+      ],
+      "clip_features": true,
+      "urgency_clip": 2.0
+    },
+    "PVComponent": {
+      "norm_max_kwh": 37.2512,
+      "forecast_horizon": 4,
+      "clip_features": true
+    },
+    "EnergyEnv": {
+      "price_encoding": "window",
+      "price_horizon": 12,
+      "price_step_minutes": 30,
+      "price_scale": 0.20461329999999994
+    }
+  },
+  "action_guard": {
+    "kind": "deadline_feasibility",
+    "margin": 0.96
+  },
+  "config": {
+    "gamma": 0.97,
+    "lr": 0.0001,
+    "batch_size": 64,
+    "buffer_capacity": 10000,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.0,
+    "epsilon_decay_steps": 350000,
+    "target_update_freq": 500,
+    "hidden_sizes": [
+      64,
+      64
+    ],
+    "seed": 1,
+    "device": "cpu",
+    "max_grad_norm": null
+  }
+}
