@@ -89,6 +89,8 @@ o = FlexOPTi.O(  # not const — compute_datetime advances each step
     get(SETTINGS, "market_country", "Germany"),
     false,
     TM_BASE_URL,
+    false,    # soft_temperature
+    1e9,      # slack_penalty
 )
 
 FlexOPTi.set_logging(o)

@@ -47,6 +47,18 @@ All keyword arguments override fields of the default options object `O`
   Start time of the MPC horizon. If not provided, defaults to current
   UTC time.
 
+## Comfort Constraint Softening
+- `soft_temperature::Bool`
+  If `true`, the room temperature bounds become soft: violations are allowed
+  but penalised in the objective. Keeps the problem feasible when the
+  comfort band cannot be met. Default: `false` (hard bounds).
+
+- `slack_penalty::Float64`
+  Cost per K⋅step of temperature violation. Default `1e9`, which is far above
+  the energy term, so the comfort band is only left when the problem would
+  otherwise be infeasible. Lower it to let the optimizer trade comfort for
+  money deliberately.
+
 ## Logging Parameters
 - `loglevel::String`  
   Logging verbosity (`"debug"`, `"info"`, `"warn"`, `"error"`).  
@@ -189,12 +201,24 @@ function default_code_parameter()
 	variable_Hu    = false                   # set true to auto-size horizon to published slots
 	tm_base_url    = "http://localhost:9090" # Trading Manager service URL
 
+	# Comfort constraint softening
+	soft_temperature = false # hard temperature bounds by default
+	# Cost per K⋅step of comfort violation. This is an exact-penalty formulation:
+	# above the largest shadow price of the temperature bounds the solution matches
+	# the hard-constrained one, so the band is only left when it has to be. Scale
+	# reference — the Montcada energy term reaches ~2e7 over a 96-step horizon
+	# (power in watts × ToU ≈ 10), so 1e9 sits ~50× above a full horizon while
+	# staying far below the ~1e15 where the cost term would vanish into rounding.
+	# NOTE: units-dependent; rescale if the power model ever moves to kW.
+	slack_penalty    = 1e9
+
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
 		mip_gap, warm_start, milp_horizon,
 		continuous_dynamo,
 		output_file, compute_datetime,
-		market_country, variable_Hu, tm_base_url)
+		market_country, variable_Hu, tm_base_url,
+		soft_temperature, slack_penalty)
 end
 
 function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},

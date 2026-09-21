@@ -9,9 +9,10 @@ using MathOptInterface
 const MOI = MathOptInterface
 
 # Test data paths
-const TEST_DIGITAL_TWIN_FILE = joinpath(@__DIR__, "..", "data", "test_dtforecast_file.json")
-const TEST_SENSORS_FILE      = joinpath(@__DIR__, "..", "data", "test_sensor_file.json"    )
-const TEST_FORECASTS_FILE    = joinpath(@__DIR__, "..", "data", "test_dtforecast_file.json")
+const TEST_DATA_DIR          = joinpath(@__DIR__, "..", "data", "montcada", "inputs")
+const TEST_DIGITAL_TWIN_FILE = joinpath(TEST_DATA_DIR, "test_dtforecast_file.json")
+const TEST_SENSORS_FILE      = joinpath(TEST_DATA_DIR, "test_sensor_file.json"    )
+const TEST_FORECASTS_FILE    = joinpath(TEST_DATA_DIR, "test_dtforecast_file.json")
 
 const COMPUTE_OPT_DATETIME = "2025-07-15T17:00:00+00:00";
 
@@ -127,7 +128,39 @@ const COMPUTE_OPT_DATETIME = "2025-07-15T17:00:00+00:00";
         @test haskey(oy, :OPT_status  )
         @test oy[:OPT_status] == MOI.OPTIMAL
     end
-    
+
+    @testset "Soft Temperature Constraints" begin
+        base = (; pilot = "Montcada", Hu = 2, solver = "HiGHS", loglevel = "warn",
+                  compute_datetime = COMPUTE_OPT_DATETIME)
+
+        hard = optimize(TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE, TEST_FORECASTS_FILE; base...)
+        soft = optimize(TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE, TEST_FORECASTS_FILE;
+                        base..., soft_temperature = true)
+
+        # The slack diagnostic is always reported, whichever mode is used.
+        for oy in (hard, soft)
+            @test haskey(oy, :T_slack)
+            @test size(oy[:T_slack]) == size(oy[:T])
+        end
+
+        # Hard mode never reports a violation.
+        @test all(iszero, hard[:T_slack])
+
+        # With the default penalty the comfort band is expensive enough that the
+        # solver does not trade it away: the soft solution must match the hard
+        # one instead of buying a cheaper, warmer/colder horizon.
+        @test soft[:OPT_status] == MOI.OPTIMAL
+        @test all(<(1e-4), soft[:T_slack])
+        @test isapprox(soft[:OPT_energy_cost], hard[:OPT_energy_cost]; rtol = 1e-6)
+
+        # A deliberately tiny penalty makes violating cheap, which proves the
+        # slack is actually wired into the objective rather than inert.
+        cheap = optimize(TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE, TEST_FORECASTS_FILE;
+                         base..., soft_temperature = true, slack_penalty = 1.0)
+        @test cheap[:OPT_energy_cost] < hard[:OPT_energy_cost]
+        @test maximum(cheap[:T_slack]) > 1e-3
+    end
+
 end
 
 println("\nFlexOPTi.Montcada tests completed successfully!")

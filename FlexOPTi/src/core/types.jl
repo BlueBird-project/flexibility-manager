@@ -38,6 +38,10 @@ Define code parameters
     - init_condition::Bool : Use explicitely initial conditions
 pilot::String : Pilot string identification 
                 "EWH", "Montcada", ...
+    - soft_temperature::Bool : Relax the temperature bounds into soft constraints,
+                penalising violations in the objective instead of forbidding them.
+    - slack_penalty::Float64 : Cost per K⋅step of temperature violation. Must stay
+                well above the energy term so comfort is never traded for money.
 """
 mutable struct O
     Hu::Int
@@ -64,6 +68,10 @@ mutable struct O
     market_country::Union{String, Nothing}  # country used to look up market_id from the Trading Manager
     variable_Hu::Bool       # if true, Hu shrinks to available published price slots
     tm_base_url::String     # base URL of the Trading Manager service
+
+    # Comfort constraint softening
+    soft_temperature::Bool  # if true, temperature bounds become soft (slack-penalised) instead of hard
+    slack_penalty::Float64  # cost per K⋅step of temperature violation
 end
 
 """

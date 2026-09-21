@@ -20,7 +20,9 @@ for building temperature and HVAC power management.
 - `oy::Dict{Symbol,Any}` — Dictionary containing MPC optimization results:
 
   ## Objective & Status
-  - `:OPT_cost` — Optimal objective value (total energy cost).
+  - `:OPT_cost` — Optimal objective value. With `o.soft_temperature == true`
+    this includes the comfort-violation penalty, so it is not a monetary cost.
+  - `:OPT_energy_cost` — Energy cost alone, always comparable across runs.
   - `:OPT_status` — Solver termination status.
   - `:o` — MPC options used.
   - `:ox` — MPC execution context.
@@ -43,6 +45,13 @@ for building temperature and HVAC power management.
   - `:Tbh` — Heating-related temperature driving term.
   - `:Tbc` — Cooling-related temperature driving term.
 
+  ## Comfort Violations
+  - `:T_slack` — Temperature band violation per step and room (Hu × Nr), in K.
+    Compare `:T` against the bounds to see the direction of a violation.
+
+  A zero matrix when `o.soft_temperature == false`, since the bounds are then
+  enforced as hard constraints.
+
 # Description
 This function constructs and solves a full hybrid MPC optimization model
 for multi-room HVAC control. The formulation includes:
@@ -53,6 +62,8 @@ for multi-room HVAC control. The formulation includes:
 - HVAC electrical power dynamics based on thermal response,
 - PV and grid power balance constraints,
 - Transformer and operational bounds,
+- Optional soft temperature bounds (`o.soft_temperature`), where comfort
+  violations are penalised in the objective rather than forbidden,
 - Time-of-Use (ToU) energy cost minimization objective.
 
 The optimization problem is solved using the selected solver,
@@ -108,9 +119,21 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     SP_low  = constraints[:SP_low ]
     SP_high = constraints[:SP_high]
 
-    # Decision Variables 
-    @variable(model, T_low  ≤      T[k=1:Nr*Hu] ≤ T_high         ) # Room temperature 
-    @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption 
+    # Decision Variables
+    if o.soft_temperature
+        # Soft comfort band: T may leave [T_low, T_high], at a price (see objective).
+        # One slack per room and step — a room cannot breach both bounds at once,
+        # so a single symmetric variable covers either direction. It must stay
+        # per-room: a shared slack would be paid for once and then widen the band
+        # for every room at every step for free.
+        @variable(model,             T[k=1:Nr*Hu]                 ) # Room temperature
+        @variable(model, 0      ≤    s[k=1:Nr*Hu]                 ) # Comfort violation [K]
+        @constraint(model, T .≥ T_low  .- s)
+        @constraint(model, T .≤ T_high .+ s)
+    else
+        @variable(model, T_low ≤     T[k=1:Nr*Hu] ≤ T_high       ) # Room temperature
+    end
+    @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption
     @variable(model, SP_low ≤     SP[k=1:Nr*Hu] ≤ SP_high        ) # HVAC temperature setpoint
     @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
     @variable(model, 0      ≤ PVused[k=1:Hu   ] ≤ PV             ) # PV used
@@ -331,8 +354,21 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             + (1 - power_mode[mpc_step]) .* p_cool_expr[mpc_step]
     )
 
-    # Objectif 
-    @objective(model, Min, Δt*sum(p_grid .* ToU_price))
+    # Objectif
+    energy_cost = @expression(model, Δt*sum(p_grid .* ToU_price))
+
+    if o.soft_temperature
+        # Exact penalty: o.slack_penalty is set well above the largest shadow
+        # price of the temperature bounds (see default_code_parameter), so the
+        # optimizer gains nothing by buying comfort and the solution matches the
+        # hard-constrained one whenever that one exists. When it does not, the
+        # band is left by the smallest amount that restores feasibility, because
+        # the penalty is linear in the violation.
+        @info "Soft temperature constraints active — penalty $(o.slack_penalty) per K⋅step."
+        @objective(model, Min, energy_cost + o.slack_penalty*sum(s))
+    else
+        @objective(model, Min, energy_cost)
+    end
 
     # Solve
     optimize!(model)
@@ -344,9 +380,17 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
                     primal_status(model) == MOI.FEASIBLE_POINT)
 
     if has_solution
+        # Comfort violations — zeros when the band is enforced as a hard constraint
+        T_slack = o.soft_temperature ? reshape(value.(s), Nr, Hu)' : zeros(Hu, Nr)
+        max_violation = maximum(T_slack)
+        if max_violation > EPSILON
+            @warn "Temperature band violated by up to $(round(max_violation, digits=3)) K over the horizon."
+        end
+
         # TODO : Rename the symbols as string and use a convention
         oy = Dict(
             :OPT_cost       => objective_value(model),
+            :OPT_energy_cost => value(energy_cost),
             :T              => reshape(value.(T),  Nr, Hu)',
             :SP             => reshape(value.(SP), Nr, Hu)',
             :SP_transformed => reshape(value.(SP_transformed), Nr, Hu)',
@@ -359,7 +403,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             :balance_cool   => value.(bc),
             :Tbh            => value.(Tbh),
             :Tbc            => value.(Tbc),
-            :OPT_status     => status, 
+            :T_slack        => T_slack,
+            :OPT_status     => status,
             :o              => o, 
             :ox             => ox
         );
@@ -368,6 +413,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
       
        oy = Dict(
            :OPT_cost       => NaN,
+           :OPT_energy_cost => NaN,
            :T              => fill(NaN, Hu, Nr),
            :SP             => fill(NaN, Hu, Nr),
            :SP_transformed => fill(NaN, Hu, Nr),
@@ -380,7 +426,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
            :balance_cool   => fill(NaN, Hu),
            :Tbh            => fill(NaN, Hu),
            :Tbc            => fill(NaN, Hu),
-           :OPT_status     => status, 
+           :T_slack        => fill(NaN, Hu, Nr),
+           :OPT_status     => status,
            :o              => o, 
            :ox             => ox
        )

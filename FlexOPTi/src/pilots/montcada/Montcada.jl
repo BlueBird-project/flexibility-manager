@@ -1,7 +1,7 @@
 # Latter to become a Module so that the different pilots don't see the common points
 
 const KELVIN_OFFSET    = 273.15
-const SENSITIVITY      = 0.5 # C  
+const SENSITIVITY      = 0.5 # C
 const EPSILON          = 1e8*eps()
 
 include(joinpath(@__DIR__, "parse_digital_twin.jl"))
