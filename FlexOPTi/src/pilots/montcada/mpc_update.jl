@@ -126,11 +126,15 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # so a single symmetric variable covers either direction. It must stay
         # per-room: a shared slack would be paid for once and then widen the band
         # for every room at every step for free.
+        @info "Temperature constraints: SOFT — band [$(round(T_low, digits=2)), " *
+              "$(round(T_high, digits=2))] K penalised at $(o.slack_penalty) per K⋅step."
         @variable(model,             T[k=1:Nr*Hu]                 ) # Room temperature
         @variable(model, 0      ≤    s[k=1:Nr*Hu]                 ) # Comfort violation [K]
         @constraint(model, T .≥ T_low  .- s)
         @constraint(model, T .≤ T_high .+ s)
     else
+        @info "Temperature constraints: HARD — band [$(round(T_low, digits=2)), " *
+              "$(round(T_high, digits=2))] K enforced; the solve fails if it cannot be met."
         @variable(model, T_low ≤     T[k=1:Nr*Hu] ≤ T_high       ) # Room temperature
     end
     @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption
@@ -364,7 +368,6 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # hard-constrained one whenever that one exists. When it does not, the
         # band is left by the smallest amount that restores feasibility, because
         # the penalty is linear in the violation.
-        @info "Soft temperature constraints active — penalty $(o.slack_penalty) per K⋅step."
         @objective(model, Min, energy_cost + o.slack_penalty*sum(s))
     else
         @objective(model, Min, energy_cost)
@@ -384,7 +387,13 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         T_slack = o.soft_temperature ? reshape(value.(s), Nr, Hu)' : zeros(Hu, Nr)
         max_violation = maximum(T_slack)
         if max_violation > EPSILON
-            @warn "Temperature band violated by up to $(round(max_violation, digits=3)) K over the horizon."
+            # Which room and step took the worst hit — the operator needs both.
+            worst_step, worst_room = Tuple(argmax(T_slack))
+            n_violating = count(>(EPSILON), T_slack)
+            @warn "Comfort band violated by up to $(round(max_violation, digits=3)) K " *
+                  "(room $worst_room, step $worst_step); $n_violating of $(Hu*Nr) room-steps outside the band."
+        elseif o.soft_temperature
+            @info "Comfort band held at every room and step; no slack used."
         end
 
         # TODO : Rename the symbols as string and use a convention
@@ -410,6 +419,10 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         );
     else
        @warn "Solver failed: $status. Returning NaN/Empty dict."
+       if status == MOI.INFEASIBLE && !o.soft_temperature
+           @warn "Temperature constraints are HARD — an unreachable comfort band is a likely cause. " *
+                 "Set soft_temperature = true to penalise violations instead and keep a usable solution."
+       end
       
        oy = Dict(
            :OPT_cost       => NaN,
