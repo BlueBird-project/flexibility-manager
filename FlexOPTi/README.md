@@ -62,6 +62,11 @@ julia> oy[:p_HVAC]          # [35386.28, 26231.65, 18397.58, 25117.73]  — HVAC
 julia> size(oy[:T])         # (4, 36)  — full temperature state matrix
 ```
 
+With `soft_temperature = true` (Montcada), `oy[:OPT_cost]` also carries the
+comfort-violation penalty and is no longer a monetary figure — use
+`oy[:OPT_energy_cost]` for the energy bill and `oy[:T_slack]` for the
+violation per step and room, in K.
+
 Two keys carry the full run context:
 
 | key | contents |
@@ -222,6 +227,8 @@ Required keys are `dt_file`, `sensors_file`, `forecast_file`, `pilot` and
 | `mip_gap` | `Float64` | `1e-4` | Relative MIP gap tolerance (e.g. `0.01` = 1%) |
 | `milp_horizon` | `Int` | `1` | Steps with binary constraints; `0` = full LP, `Hu` = full MILP |
 | `warm_start` | `Bool` | `false` | Reuse a previous solution as initial guess |
+| `soft_temperature` | `Bool` | `false` | Montcada only. Penalise temperature-bound violations instead of forbidding them, so an unreachable comfort band returns a usable solution rather than `INFEASIBLE`. Violations are reported in `oy[:T_slack]` (Hu × Nr, in K) |
+| `slack_penalty` | `Float64` | `1e9` | Cost per K⋅step of violation when `soft_temperature = true`. The default sits far above the energy term, so the band is only left when it has to be; lower it to trade comfort for cost deliberately |
 | `continuous_dynamo` | `Bool` | `true` | Use continuous (`true`) or discrete (`false`) dynamics |
 | `compute_datetime` | `String` \| `ZonedDateTime` | current UTC | Start time of the MPC horizon, e.g. `"2025-07-15T17:00:00+00:00"` |
 | `market_country` | `String` \| `None` | `None` | Country for day-ahead prices; `None` → dummy 1.0 EUR/kWh |
