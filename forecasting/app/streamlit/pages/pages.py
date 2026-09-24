@@ -19,11 +19,89 @@ def Coverage(y_true, y_pred, threshold = 0.75):
         
         return np.round((total_/len(y_true))*100,2)
 
+
+def interpolate_timeseries_15min(
+        df,
+        id_col="Cups",
+        time_col="ds",
+        freq="15min"
+    ):
+        """
+        Interpola series temporales separadas por `id_col` a una frecuencia fija
+        usando interpolación cúbica.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Dataset original
+        id_col : str
+            Columna identificadora de series (ej. 'Cups')
+        time_col : str
+            Columna de timestamps en formato string (ej. 'ds')
+        freq : str
+            Frecuencia objetivo (por defecto '15min')
+
+        Returns
+        -------
+        pd.DataFrame
+            Dataset interpolado con frecuencia regular
+        """
+
+        df = df.copy()
+
+        # Convertir ds a datetime
+        df[time_col] = pd.to_datetime(df[time_col])
+
+        interpolated_series = []
+
+        for cup_id, g in df.groupby(id_col):
+            g = g.sort_values(time_col).set_index(time_col)
+
+            # Reindexar a una grilla temporal regular
+            full_index = pd.date_range(
+                start=g.index.min(),
+                end=g.index.max(),
+                freq=freq
+            )
+            g = g.reindex(full_index)
+
+            # Aplicar interpolación cúbica solo a columnas numéricas
+            num_cols = g.select_dtypes(include="number").columns
+            
+            if len(g[num_cols].dropna()) >= 4:
+                try:
+                    g[num_cols] = g[num_cols].interpolate(
+                        method="spline",
+                        order=3,
+                        limit_direction="both"
+                    )
+                except:
+                    g[num_cols] = g[num_cols].interpolate(
+                    method="linear",
+                    limit_direction="both")
+            else:
+                # Fallback seguro
+                g[num_cols] = g[num_cols].interpolate(
+                    method="linear",
+                    limit_direction="both")
+                
+
+
+            # Restaurar identificador
+            g[id_col] = cup_id
+            g = g.reset_index().rename(columns={"index": time_col})
+
+            interpolated_series.append(g)
+
+        return pd.concat(interpolated_series, ignore_index=True)
+
+
+
 def PageInit(parent_dir):
 
     if "data" not in st.session_state or st.session_state["data"] is None:
         
-        st.image(os.path.join(parent_dir,"src", r"bluebird-logo-V8-horizontal.png"), width="stretch")
+        st.image(os.path.join(parent_dir,"src", r"bluebird-logo-V8-horizontal.png"), width=100)
 
         file = st.file_uploader("Upload a file", type=["csv", "feather", "xlsx"])
 
@@ -133,13 +211,15 @@ def PageForecasting(data):
                     st.write("Preprocessing data...")
                     data_to_forecast["ds"] = pd.to_datetime(data_to_forecast["ds"])
                     data_to_forecast = data_to_forecast.sort_values(by=["unique_id", "ds"])
-
+                    data_to_forecast = interpolate_timeseries_15min(
+                        data_to_forecast, id_col= "unique_id"
+                    )
                     st.write("Generating forecasts...")
                     data_to_forecast = data_to_forecast.rename(columns={"ds": "timestamp", "y": "target", "unique_id": "item_id"})
                     # Predicción
                     forecast = pipeline.predict_df(
                         data_to_forecast,
-                        prediction_length=24*forecast_horizon
+                        prediction_length=24*4*forecast_horizon
                     )
 
                     emissions = tracker.stop()
@@ -187,7 +267,7 @@ def PageForecasting(data):
         with col_metrics_2:
             st.metric("RMSE", f'{round(mean_squared_error(results["y"], results["forecast"]) ** 0.5, 2)}', border= True)
         with col_metrics_4:
-            st.metric("Coverage", f'{Coverage(results["y"], results["forecast"], threshold=0.95)}%', border= True)
+            st.metric("Coverage", f'{Coverage(results["y"], results["forecast"], threshold=0.75)}%', border= True)
 
         if toggle_check:
             fig = go.Figure()

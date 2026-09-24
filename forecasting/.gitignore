@@ -1,3 +1,4 @@
 emissions.csv
 __pycache__/
 powermetrics_log.txt
+intel_power_gadget_log.csv
