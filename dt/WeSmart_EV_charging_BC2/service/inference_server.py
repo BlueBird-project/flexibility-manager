@@ -54,15 +54,15 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import numpy as np
-import torch
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.agent.helpers.NN.NN import QNetwork  # noqa: E402
-from service.state_builder import StateBuilder, StateBuilderError, apply_deadline_guard  # noqa: E402
+from service.errors import StateBuilderError  # noqa: E402
+
+# torch, numpy and the state builder are imported inside ModelBundle, not here: the MPC engine
+# needs none of them, which is what lets the MPC image ship without torch (~250 MB instead of
+# 1.4 GB) and without state_builder.py at all.
 
 METADATA_FILENAME = "metadata.json"
 Q_FILENAME = "q_state_dict.pth"
@@ -74,6 +74,11 @@ class ModelBundle:
     """Loads a checkpoint + metadata.json once at startup and answers /decide requests."""
 
     def __init__(self, model_dir: Path):
+        global torch, QNetwork, StateBuilder, apply_deadline_guard
+        import torch  # noqa: PLC0415 - deliberately lazy, see the note at the top
+        from src.agent.helpers.NN.NN import QNetwork  # noqa: PLC0415
+        from service.state_builder import StateBuilder, apply_deadline_guard  # noqa: PLC0415
+
         meta_path = model_dir / METADATA_FILENAME
         q_path = model_dir / Q_FILENAME
         for p in (meta_path, q_path):
@@ -219,12 +224,22 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
 
-    model_dir = Path(os.environ.get("MODEL_DIR", "saved_models/EV"))
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
+    engine = os.environ.get("ENGINE", "mpc").lower()
 
-    logging.info(f"Loading model from {model_dir} ...")
-    Handler.bundle = ModelBundle(model_dir)
+    # Both engines expose the same decide()/health(), so everything below is shared and the
+    # request/response format cannot drift between them.
+    if engine == "mpc":
+        from service.mpc_engine import MpcBundle  # noqa: PLC0415 - keeps torch off the MPC path
+        logging.info("Engine: MPC (no trained model needed)")
+        Handler.bundle = MpcBundle.from_env()
+    elif engine in ("dqn", "rl"):
+        model_dir = Path(os.environ.get("MODEL_DIR", "saved_models/EV"))
+        logging.info(f"Engine: DQN, loading model from {model_dir} ...")
+        Handler.bundle = ModelBundle(model_dir)
+    else:
+        raise SystemExit(f"ENGINE must be 'mpc' or 'dqn', got {engine!r}")
     logging.info(f"Loaded: {json.dumps(Handler.bundle.health())}")
 
     server = ThreadingHTTPServer((host, port), Handler)

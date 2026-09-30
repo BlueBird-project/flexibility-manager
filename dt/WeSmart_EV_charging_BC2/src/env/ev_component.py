@@ -48,10 +48,11 @@ class EVComponent(BaseComponent):
         power_kw:            constant charging rate used for every station.
         penalty_per_kwh:     € per kWh still missing when an EV departs.
         fixed_penalty:       flat € charged on top of an undercharged departure.
-        progress_penalty:    € charged *every interval* while an EV is already
-                             behind schedule (shaping). Defaults to
-                             fixed_penalty / 2. Note this compounds over the
-                             session — set it to 0.0 to train on the terminal
+        progress_penalty:    € per kWh *behind schedule*, charged every interval an
+                             EV cannot still finish in time (shaping). It shrinks to
+                             zero as the EV catches up. Defaults to fixed_penalty / 2
+                             only for backwards compatibility; main.py passes an
+                             explicit per-kWh rate. Set 0.0 to train on the terminal
                              penalty alone.
         feasibility_margin:  fraction of the theoretical max charge rate assumed
                              usable when deciding whether a session is still on
@@ -275,11 +276,16 @@ class EVComponent(BaseComponent):
                 continue
             # behind-schedule shaping penalty (charged every interval it applies)
             time_left_h = max((sess.departure - t_end).total_seconds() / 3600, 0)
-            behind = self.remaining_kwh[s_idx] > time_left_h * self.power_kw * self.feasibility_margin
-            if self.progress_penalty and behind and sess.departure > t_end:
-                reward -= self.progress_penalty
-                info["ev_penalties"][s_idx] += self.progress_penalty
-                self._acc(sess.sid, penalty=self.progress_penalty)
+            deliverable = time_left_h * self.power_kw * self.feasibility_margin
+            # how many kWh short of still being able to finish; proportional, so being
+            # 0.1 kWh behind is not billed like being 20 kWh behind (a flat charge made
+            # 2.9 kWh of missing energy outweigh EUR 89 of real savings)
+            behind_kwh = self.remaining_kwh[s_idx] - deliverable
+            if self.progress_penalty and behind_kwh > 0 and sess.departure > t_end:
+                pen = self.progress_penalty * behind_kwh
+                reward -= pen
+                info["ev_penalties"][s_idx] += pen
+                self._acc(sess.sid, penalty=pen)
             # departure penalty
             if sess.departure <= t_end:
                 remaining = self.remaining_kwh[s_idx]

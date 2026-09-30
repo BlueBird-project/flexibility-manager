@@ -1,243 +1,133 @@
-# EWH - BC7 - EV Charging Scheduling with Reinforcement Learning
-This repository implements a **Reinforcement Learning** system for smart charging Electric Vehicles (EVs), using
-real-world session data provided by the Use-Case and a real price dataset.
+# EV Charging Scheduling — MPC (with a reinforcement-learning predecessor)
 
-The project includes:
+Smart charging for a site of EV chargers: decide per station whether to charge, so that the
+electricity bill is minimised and every EV still leaves fully charged. Built on real session data
+provided by the use case (WeSmart, **3 stations**, 2025) and real Belgian day-ahead prices.
 
-- A custom, **component-based EV charging environment** (EV load, optional PV production)
-- A **Deep Q-Network (DQN)** agent
-- A command line interface for training and testing the agent on different parts of dataset
+The scheduler is a **model-predictive controller (MPC)**: it holds no clock or state of its own, and
+answers whenever it's asked — which a caller does on a 15-minute tick, or immediately when a new car
+arrives. Each answer re-plans every connected car's remaining stay from scratch as one small MILP,
+commits only the interval that's starting now, and discards the rest. It optionally accounts for
+on-site PV production, and for PV net of the building's own consumption.
 
-## Environment
-The custom environment models **multiple charging stations** and **electric vehicle sessions**.
-The default dataset ([wesmart_ev_sessions.csv](src/env/dataset/wesmart_ev_sessions.csv)) covers **2 stations**
-over 2025; the older BC7 dataset ([ewh_cleaned_rtu.csv](src/env/dataset/ewh_cleaned_rtu.csv)) is also included and
-can be selected with `--sessions`. The historical price dataset
-[price_two_years_15min.xlsx](src/env/dataset/price_two_years_15min.xlsx) used in this version is obtained from
-[ELEXYS](https://www.elexys.be/insights/spot-belpex), showing a price for each 15-minute interval.
+A **Deep Q-Network** came first and is still in the repository. It is no longer the shipped
+scheduler — see [Why MPC and not RL](#why-mpc-and-not-rl).
 
-The EV session dataset contains the following columns:
-- **arrival**: timestamp arrival of the EV
-- **departure**: timestamp departure of the EV
-- **station_id**: the ID of the station where the EV is located
-- **req_kwh**: the amount of energy required by the EV
+- `src/mpc/` — the optimiser (`solve_horizon`) and the MPC step (`mpc_decide`)
+- `service/` — the always-on HTTP service, dockerised, `ENGINE=mpc` (or `dqn` for the legacy model)
+- `run_mpc.py` — run the MPC over the dataset and score it against the no-scheduler baseline
+- `main.py`, `src/env/`, `src/agent/` — the RL environment, agent and training CLI (legacy)
 
-### Charging power
-The simulator charges at a constant **9 kW** per station. This is derived from the raw charger logs
-(`ev_charger_EVSE0*_with_connected.csv`): the per-session median is 8.86 kW and 9.27 kW for the two stations,
-with a mode of 9 kW. The same figure is used by the session feasibility filter, so the environment never keeps a
-session it cannot physically serve. Override both with `--power`.
+## Results
 
-### What the agent controls
-At each 15-minute interval, the agent outputs an action for each charging station, which is either to charge (1)
-or not (0) at the next timestep. With the default dataset the agent therefore takes 2 actions per timestep.
+Test period, 433 sessions, 14,625 kWh. Baseline = charge every car immediately on arrival.
 
-## Goal
-The goal of the agent is to:
-- **minimize electricity cost**, by charging the EVs at low prices
-- **respect EV energy requirements**, by providing the EVs a good amount of energy
+| setup | baseline | **MPC** | saving | energy not delivered |
+|---|---|---|---|---|
+| EV only | €1,319.47 | **€1,085.75** | **−17.7%** | **0.00 kWh** |
+| EV + PV | €942.59 | **€710.30** | **−24.6%** | **0.00 kWh** |
+| EV + PV + building load | €1,025.75 | **€787.45** | **−23.2%** | **0.00 kWh** |
 
-## Used Framework: DQN
-We use a DQN agent ([DQN scientific paper](https://doi.org/10.48550/arXiv.1312.5602))
-([DQN easy explanation](https://medium.com/data-science/reinforcement-learning-explained-visually-part-5-deep-q-networks-step-by-step-5a5317197f4b)).
-The agent uses a neural network ([NN.py](src/agent/helpers/NN/NN.py)) to output the best action for each timestep.
-A replay buffer ([replay_buffer.py](src/agent/helpers/replay_buffer/replay_buffer.py)) stores past experiences.
-The agent does exploration and exploitation, with a decaying epsilon value.
+The MPC is **optimal for on/off charging**: solving each session exactly with whole-interval
+decisions also gives €1,085.62, which the rolling controller matches given a long enough look-ahead.
+A €1,081.08 bound exists but assumes continuously modulated power, which these chargers don't do.
 
-The network emits `2 x n_stations` values reshaped to `(n_stations, 2)`, so each station gets an independent
-binary decision instead of the agent enumerating a `2^n_stations` joint action space. Q(s,a) is the sum of the
-per-station values and the target is the sum of per-station maxima — a value-decomposition (VDN-style)
-factorisation of DQN.
+## Quick start
 
-During each timestep:
-1. The agent observes the environment state
-2. Chooses an action vector [0/1] per station
-3. Receives cost-based reward
-4. Stores the transition in the replay buffer
-5. The stored transitions are used to train the neural network, able to make a better decision
+```
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+```
 
-### State representation
-At every decision step, the environment returns a flattened numeric vector containing:
-1. Price signal: `--price-horizon` (M, default 12) **forward-looking** price values spaced
-   `--price-step-minutes` apart (default 30), i.e. about 6 h ahead. The first value is the exact price of the
-   interval about to be decided; each later one is the average of the quarter-hours in its 30-min block.
-   Belgian day-ahead prices are published a day ahead, so this is a known schedule the live service can
-   supply exactly, not a forecast with error. With the default `--price-encoding window` these are
-   **min-max scaled within the window** (0 = cheapest of the 12, 1 = most expensive; a flat window is 0.5),
-   because when to charge depends on how a price compares with what is coming, and absolute levels shift a
-   lot between seasons. Two more values keep the absolute information: the current **price level**
-   (price / 99th percentile of training prices, clipped to [-1, 1]) and the window's **spread** (max - min,
-   same scale, clipped to [0, 1]), so a nearly flat night is not mistaken for a big opportunity.
-2. Time of day encoding: for representing the time, sine and cosine encoding are used
-(sin(2π·time) and cos(2π·time))
-3. For each station, a block of 4 values: EV present (0/1), remaining kWh, hours to departure,
-and urgency (remaining energy / max possible charge time). Remaining kWh and hours are divided by the
-training split's maxima and **clipped to [0, 1]**; urgency is clipped at 2 and rescaled to [0, 1]. Without
-the clip, a session larger than anything in training pushes the network outside the range it ever saw
-(the test split has one at 1.5x), and urgency is otherwise unbounded.
-4. If PV is attached, `--pv-horizon` (N, default 4) more values: **forward-looking** net PV kWh available for
-   charging, same convention, divided by the historical maximum and clipped to [0, 1]. Unlike prices, this
-   genuinely is a forecast at inference time — training reads it straight off the historical production
-   series (perfect foresight), so keep the horizon short to limit how much a real forecast's error can
-   differ from what the model saw during training.
+Run the MPC over the dataset:
 
-**Every input is bounded** to [0, 1] or [-1, 1]; `service/test_state_parity.py` asserts it.
+```
+python run_mpc.py                                                     # EV only
+python run_mpc.py --pv src/env/dataset/solar_production.csv           # EV + PV
+python run_mpc.py --pv src/env/dataset/solar_production.csv \
+                  --consumption "src/env/dataset/common_areas_consumption(in).csv"
+```
 
-The state will look like this (defaults, one PV component attached — 28 values; 24 without PV):
-~~~
-[
- p_0, p_1, ..., p_11,                          # 12 window-scaled prices, 30 min apart   [0, 1]
- price_level, price_spread,                    #                                  [-1, 1], [0, 1]
- sin_time, cos_time,                           #                                         [-1, 1]
- [present_1, remaining_1, hours_left_1, urgency_1],   #                                   [0, 1]
- [present_2, remaining_2, hours_left_2, urgency_2],
- pv_t, pv_t+1, pv_t+2, pv_t+3                  # only when --pv is used                  [0, 1]
-]
-~~~
+It prints cost, energy delivered and unmet energy next to the baseline, and writes CSVs to
+`outputs/mpc/<setup>/`. Useful flags: `--split {train,val,test,all}`, `--horizon-hours` (default 24),
+`--max-steps`, `--site-max-power-kw`, `--time-limit`.
 
-The state returned by `reset()`/`step()` describes the interval **one step ahead** — exactly the interval the
-next action applies to. `M` and `N` are set at training time (`--price-horizon`/`--pv-horizon`) and must match
-what the live service in [service/](service/) is fed — see [service/README.md](service/README.md).
+Run it as a service (see [service/README.md](service/README.md) for the full API):
 
-### Reward Function
-The reward is constructed from:
-- Charging cost: how much we pay for charging EVs (negative reward)
-- Penalty for departing EVs with some missing energy (`--penalty-per-kwh` per kWh + `--fixed-penalty` flat)
-- Penalty for being behind schedule, charged **every interval** an EV cannot still be finished in time
-  (`--progress-penalty`, default `fixed-penalty / 2`), to help the agent learn faster
+```
+docker build -f Dockerfile.mpc -t ev-mpc:v1 .
+docker run -d -p 8080:8080 --restart unless-stopped --name ev-mpc -e ENGINE=mpc ev-mpc:v1
+```
 
-This combination encourages the agent to get minimum costs, minimum unmet energy, and respect charging deadlines.
-Note the behind-schedule term compounds over a session, so it can dominate the cost term — set
-`--progress-penalty 0` to train against the terminal penalty alone.
+`pulp` requires Python ≥ 3.12 (the image uses 3.12-slim).
 
-### Deadline guard
-On top of the network's choice, any station that can no longer meet its deadline is forced to charge:
+## How the MPC works
 
-~~~
-remaining_kwh > hours_to_departure * power_kw * 0.96   ->   charge = 1
-~~~
+Two layers, in `src/mpc/mpc.py`:
 
-It is applied during training and evaluation alike (so the network learns with it), saved in `metadata.json`,
-and applied identically by the live service. It exists because the RL policy alone occasionally strands an EV
-on rare, unusually large sessions that neither the training nor the validation data contain an example of;
-in seed sweeps 2 of 5 EV+PV runs left 38–70 kWh undelivered. With the guard, 45 runs across all three setups
-never exceeded 9.6 kWh undelivered, at equal or better cost. Disable with `--no-deadline-guard` (not advised).
+- **`solve_horizon(evs, prices, now, site_max_power_kw=None, pv_forecast=None)`** — the optimiser.
+  One MILP over a 15-minute grid from `now` to the last departure, split also at each arrival and
+  departure so partial intervals are exact. One binary variable per EV per interval (charge at full
+  power or not), locked to 0 outside that EV's connection window. Minimises Σ price × energy bought.
+  Each EV must receive its required energy; where a PV forecast is given, only the grid part of each
+  interval is paid for. Optional site-wide power cap. Solved with PuLP + HiGHS.
+- **`mpc_decide(...)`** — one receding-horizon step: calls `solve_horizon` and returns only the
+  decision for the interval starting at `now`. The caller commits that, then calls again at the next
+  trigger (a 15-minute tick, or a car arriving) with the then-current cars.
 
-## How to run the project
-Follow this guide to run the project.
-### Install Python
-First, python is required. Download python from the **OFFICIAL WEBSITE**.
+Both `pv_forecast` and `site_max_power_kw` are optional; with both `None` the problem reduces exactly
+to EV-only. **EV+PV and EV+PV+building-load are the same code path** — the caller sends solar minus
+building consumption, floored at 0.
 
-### Create and activate a virtual environment
-The virtual environment is used to install the required packages. For creating it, run from command line:
+An EV that cannot physically be filled in its remaining time has its requirement capped at what is
+deliverable, so it charges flat out rather than making the whole site's problem infeasible.
 
-```python -m venv .venv```
+### The datasets
 
-### Activate the virtual environment
-To activate the virtual environment, run from command line (WINDOWS):
+`wesmart_ev_sessions_3stations.csv` (default) is built from the raw charger logs by
+`src/env/dataset/build_sessions.py`: a session is one contiguous run of `Connected == 1`, with
+`req_kwh` the energy charged during it. Sessions are kept only if the car is plugged in for at least
+**1.15×** the time needed to deliver its energy at 9 kW — below that there is no flexibility to
+schedule. That leaves **1,442 of 1,586** sessions (48,050 kWh). The 2-station file
+`wesmart_ev_sessions.csv` is still there; select it with `--sessions`.
 
-```.venv\Scripts\activate```
+Charging power is a constant **9 kW** per station, from the raw logs (per-session medians of 9.13,
+9.61 and 8.86 kW). Prices come from [ELEXYS](https://www.elexys.be/insights/spot-belpex) at
+15-minute resolution; solar and building consumption are separate 15-minute series.
 
-or from macOS/Linux:
+## Why MPC and not RL
 
-```source .venv/bin/activate```
+The DQN worked: about **11% cheaper** than the baseline. But it captured only **62%** of the saving
+the optimiser reaches, left a little energy undelivered, and its result varied by several percent
+between random seeds.
 
-### Install dependencies
-To install the required packages and dependencies, run:
+The cause is structural, not a tuning failure. Prices are published up to 35 hours ahead and
+departure times are declared, so the problem is **fully observable and deterministic** — and in that
+setting planning beats learning, because there is nothing to learn that cannot be computed directly.
+Extensive tuning (reward scale, discount, replay buffer, network size, price-window length, penalty
+sweeps over hundreds of runs) moved the result by less than the seed-to-seed noise.
 
-```pip install -r requirements.txt```
+This would change if prices became **forecasts** instead of a published schedule: a committed plan
+built on wrong numbers degrades, while a reactive policy can adapt. The MPC already re-plans every
+15 minutes, which absorbs much of that error, so any future RL work should be measured against MPC
+under forecast error rather than against the no-scheduler baseline.
 
-`openpyxl` is included because the default price dataset is an `.xlsx` file.
+### Running the legacy RL
 
-### Train a new model
-For training the model, by using the default datasets saved in the folder, run:
+Still functional and unchanged:
 
-```python main.py train```
+```
+python main.py train                                    # 3 chargers, EV only
+python main.py train --pv src/env/dataset/solar_production.csv
+python main.py test
+```
 
-This command will:
-- Load the dataset and drop sessions that cannot be served at 9 kW
-- Split it per station, chronologically: 55% train, 15% validation, 30% test
-- Train the DQN, scoring the greedy policy on the validation split after every episode and keeping the
-  **best-scoring weights** (not simply the last episode's)
-- Save the trained model in [saved_models](saved_models), together with a `metadata.json`
-- Evaluate on the test split and against the always-charge baseline
+Models and reports go to `saved_models/3_chargers/<setup>/` and `outputs/3_chargers/<setup>/`. The
+agent is a DQN whose network emits one independent binary decision per station (a VDN-style
+factorisation rather than a `2^n` joint action space); training holds out a validation split,
+keeps the best-scoring weights, clips state features to the range seen in training, and applies a
+deadline guard that forces charging when a car can no longer finish. `--help` documents the flags.
 
-The same command works for every setup; add `--pv` and/or `--consumption` for EV+PV and EV+PV+building load.
-
-### Choosing a model to ship
-A single training run is one draw from a wide distribution — identical settings can differ by several
-percent in cost depending only on `--seed`. To pick a model, train a few seeds, compare the
-`Restored best-validation weights from episode N (VAL reward X)` line each prints, and keep the seed with
-the **highest VAL reward**. Select on validation, never on the test numbers. Training is deterministic per
-seed, so re-running the winner reproduces it exactly. The committed checkpoints were chosen this way from
-15 seeds each.
-
-### Test the model
-To test the model, by using the models saved in [saved_models](saved_models), run:
-
-```python main.py test```
-
-This command will:
-- Load the default models from [saved_models](saved_models)
-- Restore the normalisation constants from `metadata.json` so the network sees the same input scale it trained on
-- Run evaluation
-- Generate per-EV CSVs in the [outputs](outputs) folder
-- Generate a comparison wrt the always-charge baseline, saving it in [outputs](outputs)
-
-`python main.py test` now reproduces the evaluation printed at the end of `python main.py train` exactly.
-
-### Options
-
-Shared by both subcommands:
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--sessions PATH` | `src/env/dataset/wesmart_ev_sessions.csv` | EV session dataset |
-| `--price PATH` | `src/env/dataset/price_two_years_15min.xlsx` | Price dataset (`.xlsx` or `.csv`) |
-| `--pv PATH` | none | PV production dataset; adds the PV component |
-| `--consumption PATH` | none | Building consumption, netted off PV (requires `--pv`) |
-| `--power FLOAT` | `9.0` | Charging power in kW (filter **and** simulator) |
-| `--slack FLOAT` | `1.5` | Feasibility slack for the session filter |
-| `--penalty-per-kwh FLOAT` | `5.0` | € per kWh unmet at departure |
-| `--fixed-penalty FLOAT` | `10.0` | Flat € for an undercharged departure |
-| `--progress-penalty FLOAT` | `fixed-penalty / 2` | € per interval while behind schedule; `0` disables |
-| `--price-horizon INT` | `12` | Number of forward-looking price values in the state (M) |
-| `--price-step-minutes INT` | `30` | Spacing of those values, a multiple of 15 (e.g. `15`, `30`, `60`) |
-| `--price-encoding window/raw` | `window` | `window`: min-max within the window + level + spread; `raw`: EUR/kWh as-is (pre-change) |
-| `--pv-horizon INT` | `4` | Forward-looking PV forecast steps in the state (N); must match the live service |
-| `--seed INT` | `1` | Random seed |
-| `--val-size FLOAT` | `0.15` | Validation fraction used to pick the best weights; `0` keeps the last episode. Use the same value for `train` and `test` |
-| `--no-deadline-guard` | off | Disable the deadline guard (not advised) |
-| `--legacy-features` | off | Disable feature clipping (only to reproduce pre-fix checkpoints) |
-| `--verbose yes/no` | `yes` | Detailed printing |
-
-`train` only:
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--num_episodes INT` | `50` | Training episodes |
-| `--save-model yes/no` | `yes` | Write checkpoints |
-| `--val-every INT` | `1` | Evaluate on the validation split every N episodes |
-
-For `test`, the price settings, clipping and the guard are all taken from the checkpoint's `metadata.json`,
-not from these flags, so a model is always evaluated the way it was trained — including checkpoints from
-before the price change, which still use 4 raw prices.
-
-`test` only:
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--q PATH` | `saved_models/<run>/q_state_dict.pth` | Q-network state dict |
-| `--qtarget PATH` | `saved_models/<run>/q_target_state_dict.pth` | Target-network state dict |
-| `--metadata PATH` | next to `--q` | `metadata.json` with the training normalisation constants |
-| `--allow-unsafe-load` | off | Permit legacy pickled-module checkpoints (executes code from the file) |
-| `--save-prefix PATH` | `outputs/<run>/test` | Prefix for the evaluation CSVs |
-
-### Output folders
-Model and output directories are namespaced by the attached components: `EV`, `EV_PV`, `EV_PV_Cons`. Train and
-test with the same `--pv`/`--consumption` combination so the default checkpoint paths line up.
-
-## Live deployment
-A trained checkpoint (`saved_models/<run>/`) can be served as a long-running HTTP service, dockerized, for a
-real charger controller to call once per 15-minute interval. See [service/README.md](service/README.md) for
-the request/response format and how to build and run the container.
+For serving that model instead of the MPC, set `ENGINE=dqn`; note its request format differs
+(23 prices by default) — `/health` reports what a given container expects.
