@@ -1,0 +1,23 @@
+# Only service/ + src/agent/ are needed in the image (see Dockerfile); everything
+# below is training/analysis-only, large, or local dev cruft.
+.venv/
+.idea/
+legacy/
+outputs/
+output/
+saved_results/
+saved_models/
+src/env/
+main.py
+requirements.txt
+README.md
+CLAUDE.md
+*.csv
+*.xlsx
+
+service/test_state_parity.py
+
+__pycache__/
+*.pyc
+.git/
+.gitignore

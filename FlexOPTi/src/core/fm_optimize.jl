@@ -1,0 +1,245 @@
+"""
+    optimize(digital_twin_file, sensors_file, forecasts_file; kwargs...) -> Dict{Symbol,Any}
+
+Run a one-step Model Predictive Control (MPC) optimization for a selected
+building (pilot). This function acts as the main API entry point: it loads
+model data, configures options, dispatches to the appropriate pilot-specific
+MPC implementation, and returns structured optimization results.
+
+# Arguments
+- `digital_twin_file::AbstractString`  
+  Path to the digital twin JSON file containing model structure,
+  identified dynamics, and metadata.
+
+- `sensors_file::AbstractString`  
+  Path to the sensors JSON file containing current measurements
+  used as initial conditions.
+
+- `forecasts_file::AbstractString`  
+  Path to the forecasts JSON file containing disturbance predictions
+  (e.g., weather, occupancy, etc.).
+
+# Keyword Arguments (kwargs...)
+
+All keyword arguments override fields of the default options object `O`
+(see `default_code_parameter()`).
+
+## Core MPC Parameters
+- `Hu::Int`  
+  Control horizon (number of future time steps optimized).
+  Default: `1`.
+
+- `init_condition::Bool`  
+  Whether to enforce special initial-condition handling logic.
+  Default: `false`.
+
+- `pilot::String` (**required**)  
+  Name of the building/pilot to optimize. Used for multiple dispatch
+  via `resolve_building(pilot)`.  
+  Example: `pilot="Montcada"`.
+
+- `solver::String`  
+  MILP/LP solver name (must correspond to a loaded JuMP optimizer).
+  Example: `"HiGHS"`, `"Gurobi"`, etc.  
+  Default: `"HiGHS"`.
+
+- `compute_datetime::ZonedDateTime`  
+  Start time of the MPC horizon. If not provided, defaults to current
+  UTC time.
+
+## Comfort Constraint Softening
+- `soft_temperature::Bool`
+  If `true`, the room temperature bounds become soft: violations are allowed
+  but penalised in the objective. Keeps the problem feasible when the
+  comfort band cannot be met. Default: `false` (hard bounds).
+
+- `slack_penalty::Float64`
+  Cost per K⋅step of temperature violation. Default `1e9`, which is far above
+  the energy term, so the comfort band is only left when the problem would
+  otherwise be infeasible. Lower it to let the optimizer trade comfort for
+  money deliberately.
+
+## Logging Parameters
+- `loglevel::String`  
+  Logging verbosity (`"debug"`, `"info"`, `"warn"`, `"error"`).  
+  Default: `"info"`.
+
+- `logoutput::String`  
+  Logging output mode (e.g., `"console"`, `"file"`, `"combined"`).  
+  Default: `"combined"`.
+
+- `logfile::String`  
+  Log file name (used when file logging is enabled).  
+  Default: `"fm.log"`.
+
+- `log_with_time::Bool`  
+  Whether to prepend timestamps to log entries.  
+  Default: `true`.
+
+## Output Parameters
+- `output_file::String`  
+  Filename where optimization results are exported.  
+  Default: `"output.txt"`.
+
+  # Returns
+- `oy::Dict{Symbol,Any}` — Optimization results as documented in `mpc_update`.
+  See `?mpc_update` for a full description of all returned fields
+  (objective value, temperatures, setpoints, power flows, hybrid variables,
+  solver status, options, and execution context).
+"""
+function optimize(digital_twin_file,
+                  sensors_file::Union{AbstractString, Nothing}   = nothing,
+                  forecasts_file::Union{AbstractString, Nothing} = nothing;
+                  kwargs...)
+
+	process_start_datetime = Dates.now()
+
+	# Standard code parameters
+	o = default_code_parameter()
+	# Override defaults from keyword args (kwargs... is a NamedTuple)
+	for (k, v) in kwargs
+        if hasproperty(o, k)
+            setproperty!(o, k, v)
+        end
+    end
+
+	@info "Set logger to level $(o.loglevel)"
+	set_logging(o)
+
+	# Dispatch to the right pilot
+	if o.pilot === nothing
+		throw(ArgumentError("No pilot (Building) selected. Select a pilot as 
+		        FM.optimize(args ; pilot = \"PilotName\", kwargs...)"))
+	elseif o.pilot isa String
+		@info "Working with pilot $(o.pilot)"
+		o.pilot = resolve_building(o.pilot) # o.pilot data structure for multiple dispatch 
+	end
+
+	@info "Starting one step optimization"
+
+	# TODO : With the API cach the lattest dynamics in a module digital twin and if the API gives nothing use the lattest catch data
+	@info "Reading the digital twin from $digital_twin_file."
+	digital_twin = parse_digital_twin(o.pilot, o, digital_twin_file)
+
+	# Todo : Get from API/Database
+	@info "Reading the sensors from $sensors_file."
+	sensors = parse_sensors(o.pilot, sensors_file)
+
+	# TODO : Similar with forecasts
+	@info "Reading the forecasts from $forecasts_file."
+	forecasts = parse_forecasts(o.pilot, o, forecasts_file)
+
+	# Fetch day-ahead market prices; updates o.Hu in-place if o.variable_Hu == true
+	@info "Fetching market prices (country=$(o.market_country)) from $(o.tm_base_url)."
+	prices, prices_quality = fetch_market_prices(o)
+
+	constraints = build_constraints(o.pilot)
+	@info "Building the constraints."
+
+	# Build the dynamics (dispatched per pilot)
+	dynamo = build_dynamics(o.pilot, o, digital_twin, sensors, forecasts)
+
+	# Store in the input structure
+	ox = OX(digital_twin, sensors, forecasts, constraints, dynamo, prices)
+
+	# Pass the configured Params `O` and inputs `OX` to the MPC
+	opt_time = @elapsed begin
+		oy = mpc_update(o.pilot, o, ox) # One step prediction
+	end
+	@info "Optimization terminated with status $(oy[:OPT_status]) in $(@sprintf("%.2g",opt_time)) seconds."
+	oy[:prices_quality] = prices_quality
+
+	process_end_datetime = Dates.now()
+	process_elapsed_time_in_sec = (process_end_datetime - process_start_datetime) / Second(1)
+
+	# Add time metadata (pilot-dispatched for source datetime extraction)
+	add_date_time_metadata!(o.pilot, oy,
+		process_start_datetime, process_end_datetime,
+		process_elapsed_time_in_sec)
+
+	return oy
+end
+
+
+"""
+  o::O = default_code_parameter()
+
+  Create and return the default MPC options structure `O`.
+  
+  These parameters define horizon length, logging configuration,
+  solver selection, output settings, and start time.
+  All fields can be overridden via `kwargs...` in `optimize`.
+"""
+function default_code_parameter()
+
+	# Code parameters
+	Hu             = 24     # Controller horizon
+	Δt             = 900.0  # Sampling time [seconds]
+	init_condition = false
+	pilot          = nothing
+
+	# Logging parameters
+	loglevel       = "info"
+	logoutput      = "combined"
+	logfile        = "fm.log"
+	log_with_time  = true
+	solver         = "HiGHS"
+	mip_gap        = 1e-4   # relative MIP gap (override via kwargs, e.g. mip_gap=0.01)
+	warm_start     = false  # warm-starting disabled by default
+	milp_horizon   = 1      # only first step binary by default; set to Hu for full MILP
+
+	# Dynamics (DT) hyperparameters
+	continuous_dynamo = true # Use continuous dynamics (true) or discrete (false)
+
+	# Miscelanous
+	output_file = "output.txt"
+
+	compute_datetime = now(tz"UTC") # Use current time if not specified
+
+	# Market price parameters
+	market_country = nothing                 # resolved to market_id at query time via TM registry
+	variable_Hu    = false                   # set true to auto-size horizon to published slots
+	tm_base_url    = "http://localhost:9090" # Trading Manager service URL
+
+	# Comfort constraint softening
+	soft_temperature = false # hard temperature bounds by default
+	# Cost per K⋅step of comfort violation. This is an exact-penalty formulation:
+	# above the largest shadow price of the temperature bounds the solution matches
+	# the hard-constrained one, so the band is only left when it has to be. Scale
+	# reference — the Montcada energy term reaches ~2e7 over a 96-step horizon
+	# (power in watts × ToU ≈ 10), so 1e9 sits ~50× above a full horizon while
+	# staying far below the ~1e15 where the cost term would vanish into rounding.
+	# NOTE: units-dependent; rescale if the power model ever moves to kW.
+	slack_penalty    = 1e9
+
+	return O(Hu, Δt, init_condition, pilot,
+		loglevel, logoutput, logfile, log_with_time, solver,
+		mip_gap, warm_start, milp_horizon,
+		continuous_dynamo,
+		output_file, compute_datetime,
+		market_country, variable_Hu, tm_base_url,
+		soft_temperature, slack_penalty)
+end
+
+function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},
+	start_datetime::DateTime, end_datetime::DateTime,
+	process_elapsed_time_in_sec::Float64)::Dict{Symbol, Any}
+
+	oy[:OPT_start_date_time ] = string(start_datetime)
+	oy[:OPT_end_date_time   ] = string(end_datetime)
+	oy[:OPT_elapsed_time_sec] = process_elapsed_time_in_sec
+
+	# Pilot-specific extraction of source datetimes
+	fill_source_datetimes!(pilot, oy)
+
+	return oy
+end
+
+# Fallback for pilots that don't override: use compute_datetime from o
+function fill_source_datetimes!(::AbstractBuilding, oy::Dict{Symbol, Any})
+	dt_str = string(oy[:o].compute_datetime)
+	oy[:DT_datetime       ] = dt_str
+	oy[:forecasts_datetime] = dt_str
+	oy[:sensors_datetime  ] = dt_str
+	return oy
+end

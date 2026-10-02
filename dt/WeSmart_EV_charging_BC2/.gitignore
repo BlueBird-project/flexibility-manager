@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+
+# exported docker images — too large for git, share via OneDrive/WeTransfer/GitHub Releases instead
+*.tar
+
+# generated at runtime, not source
+outputs/
+output/
+saved_results/

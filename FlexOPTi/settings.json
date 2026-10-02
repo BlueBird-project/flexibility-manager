@@ -1,0 +1,12 @@
+{
+  "pilot": "Ewh",
+  "solver": "HiGHS",
+  "Hu": 48,
+  "delta_t": 900.0,
+  "retrain_every_h": 168,
+  "market_country": "Germany",
+  "tm_base_url": "http://tm-service:9090",
+  "http_port": 8080,
+  "mip_gap": 0.01,
+  "milp_horizon": 1
+}

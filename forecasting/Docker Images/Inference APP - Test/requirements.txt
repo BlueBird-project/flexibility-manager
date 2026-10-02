@@ -1,0 +1,11 @@
+streamlit
+pandas
+plotly
+scikit-learn
+codecarbon
+torch
+transformers
+accelerate
+chronos-forecasting
+openpyxl
+pyarrow

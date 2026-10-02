@@ -1,0 +1,9 @@
+# Generated run artifacts (see CLAUDE.md) -- not source
+saved_models/
+outputs/
+
+# Python / editor
+__pycache__/
+*.pyc
+.venv/
+.idea/
