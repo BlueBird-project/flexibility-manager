@@ -30,7 +30,7 @@ import torch
 import numpy as np
 import pandas as pd
 
-from src.agent.dqn_agent import DQNAgent
+from src.agent.dqn_agent import DQNAgent, DQNConfig
 from src.env.env import EVChargingEnv
 
 # -----------------------------
@@ -97,19 +97,23 @@ DEFAULT_SAVED_MODELS_DIR = "saved_models"
 DEFAULT_Q = "saved_models/q_state_dict.pth"
 DEFAULT_QTARGET = "saved_models/q_target_state_dict.pth"
 
-POWER = 11
+# Fallback charging power (kW) for any session that doesn't specify its own
+# power_kw -- e.g. ewh_cleaned_rtu.csv has no power_kw column, so every
+# session there uses this. ewh_augmented.csv carries a per-session power_kw
+# (drawn from {5,7,9,11,22}), which takes priority over this default.
+DEFAULT_POWER_KW = 11
 PENALTY_PER_KWH = 2
 FIXED_PENALTY = 10
 EPISODES = 50
 SEED = 1
 
 # Shared power cap (kW) across all stations, e.g. a feeder/transformer limit.
-# None disables it (no change from prior behavior). When set, at most
-# floor(POWER_LIMIT_KW / POWER) stations can charge in the same interval;
-# the rest are curtailed that interval regardless of their action (see
-# EVChargingEnv._select_charging_stations). Shared by train and test since
-# both call make_env(), so there's no risk of the two commands disagreeing
-# on the cap.
+# None disables it (no change from prior behavior). When set, stations are
+# admitted (most urgent first) while their combined power_kw stays within
+# this cap; the rest are curtailed that interval regardless of their action
+# (see EVChargingEnv._select_charging_stations). Shared by train and test
+# since both call make_env(), so there's no risk of the two commands
+# disagreeing on the cap.
 POWER_LIMIT_KW = None
 
 
@@ -125,8 +129,11 @@ def load_sessions_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     df["arrival"] = pd.to_datetime(df["arrival"])
     df["departure"] = pd.to_datetime(df["departure"])
-    # same cleaning as in main_def.py
-    mask = (df["departure"] - df["arrival"]).dt.total_seconds() / 3600 >= 1.5 * df["req_kwh"] / POWER
+    if "power_kw" not in df.columns:
+        df["power_kw"] = DEFAULT_POWER_KW
+    # same cleaning as in main_def.py, but against each session's own power
+    # now that it can vary (was a single global POWER before)
+    mask = (df["departure"] - df["arrival"]).dt.total_seconds() / 3600 >= 1.5 * df["req_kwh"] / df["power_kw"]
     df = df[mask].reset_index(drop=True)
     df = df.sort_values(["arrival"])
     return df
@@ -143,9 +150,9 @@ def make_env(price_df: pd.DataFrame, sessions_df: pd.DataFrame) -> EVChargingEnv
     env = EVChargingEnv(
         price_df=price_df,
         sessions_df=sessions_df,
-        power_kw=POWER,
+        default_power_kw=DEFAULT_POWER_KW,
         interval_minutes=15,
-        price_window=12,
+        price_window=24,
         penalty_per_kwh=PENALTY_PER_KWH,
         fixed_penalty=FIXED_PENALTY,
         skip_empty=True,
@@ -178,6 +185,8 @@ def save_env_meta(env: EVChargingEnv, model_dir: Path) -> None:
         "station_ids": [_to_native(s) for s in env.station_ids],
         "norm_max_hours": float(env.norm_max_hours),
         "norm_max_kwh": float(env.norm_max_kwh),
+        "norm_max_power_kw": float(env.norm_max_power_kw),
+        "norm_max_price": float(env.norm_max_price),
     }
     with open(model_dir / "env_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
@@ -198,6 +207,13 @@ def apply_env_meta(env: EVChargingEnv, meta: dict) -> None:
     env.station_idx = {sid: i for i, sid in enumerate(env.station_ids)}
     env.norm_max_hours = meta["norm_max_hours"]
     env.norm_max_kwh = meta["norm_max_kwh"]
+    # older env_meta.json files (saved before per-session power) won't have
+    # this key -- fall back to the env's own (test-set-derived) value rather
+    # than crash, matching the "no meta at all" degraded path.
+    if "norm_max_power_kw" in meta:
+        env.norm_max_power_kw = meta["norm_max_power_kw"]
+    if "norm_max_price" in meta:
+        env.norm_max_price = meta["norm_max_price"]
 
 
 # -----------------------------
@@ -227,8 +243,13 @@ def cmd_train(args: argparse.Namespace) -> int:
     if save_model:
         save_env_meta(env, model_dir)
 
-    # Agent (save flag is honored by agent_cl.DQNAgent)
-    agent = DQNAgent(env.observation_size, env.action_size, save=save_model)
+    # Agent (save flag is honored by agent_cl.DQNAgent). cfg.seed is passed
+    # explicitly -- DQNAgent's default cfg has its own hardcoded seed, which
+    # would otherwise silently ignore SEED here (see sweep_penalties.py for
+    # the same fix; both call sites had this bug).
+    cfg = DQNConfig(seed=SEED, use_wandb=args.wandb, wandb_project=args.wandb_project,
+                     wandb_run_name=f"train_{Path(sessions_path).stem}")
+    agent = DQNAgent(env.observation_size, env.action_size, cfg=cfg, save=save_model)
 
     # Train
     agent.train(env, verbose=verbose, episodes=EPISODES)
@@ -251,6 +272,7 @@ def cmd_train(args: argparse.Namespace) -> int:
             'hours_total': row.get('hours_total', 0.0),
             'hours_charging': row.get('hours_charging', 0.0),
             'charge_utilization': row.get('charge_utilization', 0.0),
+            'curtailed_station_steps': row.get('curtailed_station_steps', 0),
         }
 
     row_test = (res_test.get('per_episode') or [{}])[0]
@@ -264,6 +286,10 @@ def cmd_train(args: argparse.Namespace) -> int:
     if verbose:
         print(f"Saved per-EV CSVs to: {res_test.get('csv')}, {res_rb.get('csv')}\n"
               f"Comparison to: {out_dir / 'summary_compare.csv'}")
+
+    # train() no longer auto-finishes wandb (see DQNAgent.train()) so its
+    # sync/summary dump doesn't print ahead of the results above.
+    agent.finish_wandb()
 
     return 0
 
@@ -339,7 +365,7 @@ def cmd_test(args: argparse.Namespace) -> int:
             print(
                 f"[INFO] Applied training-time env metadata from {meta_dir / 'env_meta.json'} "
                 f"(stations={env.n_stations}, norm_max_hours={env.norm_max_hours:.3f}, "
-                f"norm_max_kwh={env.norm_max_kwh:.3f})"
+                f"norm_max_kwh={env.norm_max_kwh:.3f}, norm_max_power_kw={env.norm_max_power_kw:.3f})"
             )
     else:
         print(
@@ -395,6 +421,7 @@ def cmd_test(args: argparse.Namespace) -> int:
                     'hours_total': row.get('hours_total', 0.0),
                     'hours_charging': row.get('hours_charging', 0.0),
                     'charge_utilization': row.get('charge_utilization', 0.0),
+                    'curtailed_station_steps': row.get('curtailed_station_steps', 0),
                 }
 
             row_test = (res_test.get('per_episode') or [{}])[0]
@@ -429,6 +456,9 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("--price", type=str, default=None, help=f"Path to price XLSX (default: {DEFAULT_PRICE})")
     pt.add_argument("--verbose", choices=["yes", "no"], default="yes", help="Verbose output (default: yes)")
     pt.add_argument("--save-model", choices=["yes", "no"], default="yes", help="Save model checkpoints (default: yes)")
+    pt.add_argument("--wandb", action="store_true",
+                     help="log reward/loss curves to Weights & Biases (needs WANDB_API_KEY in the environment)")
+    pt.add_argument("--wandb-project", default="ev-charging-dqn")
     pt.set_defaults(func=cmd_train)
 
     # Test subcommand
