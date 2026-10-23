@@ -105,8 +105,10 @@ def PageInit(parent_dir):
 
         file = st.file_uploader("Upload a file", type=["csv", "feather", "xlsx"])
 
+        sep_ = st.selectbox("Separator", options = [",", ";"])
+
         if file is not None:
-            data = pd.read_csv(file) if file.name.endswith("csv") else pd.read_feather(file) if file.name.endswith("feather") else pd.read_excel(file)
+            data = pd.read_csv(file, sep = sep_) if file.name.endswith("csv") else pd.read_feather(file) if file.name.endswith("feather") else pd.read_excel(file)
 
             st.dataframe(data, height=100)
 
