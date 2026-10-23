@@ -26,8 +26,7 @@ from datetime import datetime
 import numpy as np
 
 
-class StateBuilderError(ValueError):
-    """Raised for any malformed or out-of-contract request payload."""
+from service.errors import StateBuilderError  # noqa: F401 - re-exported, callers import it here
 
 
 def encode_prices(quarter_prices, horizon, ratio, encoding, scale):

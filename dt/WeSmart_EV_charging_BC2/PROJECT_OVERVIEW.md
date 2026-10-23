@@ -2,87 +2,131 @@
 
 ## 1. What this project does
 
-A reinforcement-learning agent (Deep Q-Network) decides, every 15 minutes, whether each EV
-charging station should charge or not — with the goal of minimizing electricity cost while
-still fully charging every EV before it departs.
+It decides, for each EV charging station, whether to charge or not — minimising the electricity
+bill while still fully charging every EV before it departs.
 
-It was trained on real charging-session data (WeSmart, 2 stations, 2025) and real Belgian
-day-ahead electricity prices (Belpex/ELEXYS).
+The decision is made by a **model-predictive controller (MPC)**. It has no clock of its own: it sits
+idle until asked, then plans the whole remaining stay of every connected car as a small optimisation
+problem and commits only the interval starting right now. A caller triggers it on a 15-minute tick,
+or sooner if a car arrives, and gets an up-to-date decision either way.
 
-Three setups are trained and can each be run as a service, all from the same code and the same
-Dockerfile:
+It was developed on real charging-session data (WeSmart, **3 stations**, 2025) and real Belgian
+day-ahead electricity prices (Belpex/ELEXYS). Three setups are supported:
 
-| setup | model folder | uses |
-|---|---|---|
-| **EV only** | `saved_models/EV/` | charging sessions + prices |
-| **EV + PV** | `saved_models/EV_PV/` | + on-site solar production forecast |
-| **EV + PV + building load** | `saved_models/EV_PV_Cons/` | + solar net of the building's own consumption |
+| setup | uses |
+|---|---|
+| **EV only** | charging sessions + electricity prices |
+| **EV + PV** | + on-site solar production |
+| **EV + PV + building load** | + solar net of the building's own consumption |
 
-## 2. How it's delivered
+## 2. Results
 
-A trained model plus a small HTTP server, packaged as a Docker image (one image per setup, all
-built from the same `Dockerfile.release`). The image runs
-forever as a container; a real charger controller calls it once per 15-minute interval with
-current conditions and gets back a charge / no-charge decision for each station. No Python or
-ML knowledge is needed to *run* it — just Docker.
+Measured on the held-out test period (433 sessions, 14,625 kWh) against charging every car
+immediately on arrival, which is what happens with no scheduler:
 
-## 3. What you receive, and how to run it locally
+| setup | baseline cost | **MPC cost** | **saving** | energy not delivered |
+|---|---|---|---|---|
+| EV only | €1,319.47 | **€1,085.75** | **−17.7%** | **0.00 kWh** |
+| EV + PV | €942.59 | **€710.30** | **−24.6%** | **0.00 kWh** |
+| EV + PV + building load | €1,025.75 | **€787.45** | **−23.2%** | **0.00 kWh** |
 
-You'll be given access to this Git repository — no separate file to receive or transfer. The
-trained models' weights (`saved_models/EV/`, `EV_PV/`, `EV_PV_Cons/`) are committed in the repo, so
-cloning it is enough to build a self-contained Docker image locally; nothing else needs to be sent
-alongside it.
+Every EV leaves fully charged in all three setups. With solar, the share of on-site production
+used by the cars rises from 28% to 32%.
 
-**To run it on your own machine:**
+**The MPC is provably optimal for this problem.** Solving each session exactly with whole-interval
+decisions gives €1,085.62 — the same figure the rolling controller reaches with a long enough
+look-ahead. A theoretical bound of €1,081.08 exists but assumes chargers can modulate power
+continuously; at fixed-power on/off charging it is unreachable, and the €4.54 difference is simply
+what on/off costs versus dimming.
 
-1. Install Docker Desktop if you don't already have it, and make sure it's running.
-2. Install Git if you don't already have it.
-3. Clone the repository and move into it:
+### Why not reinforcement learning
+
+Earlier versions used a Deep Q-Network. It worked — about 11% cheaper than the baseline — but it
+captured only **62%** of the saving the optimiser achieves, left a little energy undelivered, and
+its result moved by several percent from one random seed to the next.
+
+The reason is structural: prices are published in advance and departure times are declared, so the
+problem is fully observable and deterministic. Under those conditions planning beats learning —
+there is nothing to learn that cannot simply be computed. The RL code is still in the repository
+(`main.py`, `src/agent/`, `src/env/`) and the analysis stands, but the shipped scheduler is the MPC.
+
+That trade-off would change if prices became **forecasts** rather than a published schedule: a plan
+built on wrong numbers degrades, and that is where a learned, reactive policy could earn its place
+again. The MPC already re-plans every 15 minutes, which absorbs much of that error.
+
+## 3. How it's delivered
+
+A single Docker image containing the optimiser and a small HTTP server. The container runs forever,
+waiting — it never does anything until called. A charger controller calls it with the current
+conditions, whenever a decision is needed, and gets back a charge / no-charge decision per station.
+
+There are **no model files and no training step** — nothing is baked in, so **one image serves all
+three setups**, chosen by an environment variable at run time. The image is ~320 MB.
+
+## 4. What you receive, and how to run it locally
+
+You'll be given access to this Git repository — nothing else needs to be sent.
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and make sure it's running.
+2. Install [Git](https://git-scm.com/downloads).
+3. Clone and enter the project:
    ```
    git clone https://github.com/BlueBird-project/flexibility-manager.git
    cd flexibility-manager/dt/WeSmart_EV_charging_BC2
    ```
-4. Build the image for the setup you want. `MODEL_RUN` picks which model folder gets baked in:
+4. Build the image once:
+   ```
+   docker build -f Dockerfile.mpc -t ev-mpc:v1 .
+   ```
+5. Start the setup you want. Several can run side by side on different ports:
 
-   | setup | build command |
-   |---|---|
-   | EV only | `docker build -f Dockerfile.release --build-arg MODEL_RUN=EV -t ev-dqn-inference:ev-v1 .` |
-   | EV + PV | `docker build -f Dockerfile.release --build-arg MODEL_RUN=EV_PV -t ev-dqn-inference:ev-pv-v1 .` |
-   | EV + PV + load | `docker build -f Dockerfile.release --build-arg MODEL_RUN=EV_PV_Cons -t ev-dqn-inference:ev-pv-cons-v1 .` |
-
-5. Start it as a background service. Each container needs its own name and host port, so several
-   setups can run side by side:
-
-   | setup | run command | URL |
+   | setup | command | URL |
    |---|---|---|
-   | EV only | `docker run -d -p 8080:8080 --restart unless-stopped --name ev-dqn ev-dqn-inference:ev-v1` | `http://localhost:8080` |
-   | EV + PV | `docker run -d -p 8081:8080 --restart unless-stopped --name ev-dqn-pv ev-dqn-inference:ev-pv-v1` | `http://localhost:8081` |
-   | EV + PV + load | `docker run -d -p 8082:8080 --restart unless-stopped --name ev-dqn-pv-cons ev-dqn-inference:ev-pv-cons-v1` | `http://localhost:8082` |
+   | EV only | `docker run -d -p 8080:8080 --restart unless-stopped --name ev-mpc -e ENGINE=mpc ev-mpc:v1` | `http://localhost:8080` |
+   | EV + PV *(and + building load)* | `docker run -d -p 8081:8080 --restart unless-stopped --name ev-mpc-pv -e ENGINE=mpc -e MPC_HAS_PV=1 ev-mpc:v1` | `http://localhost:8081` |
 
-6. Confirm it's up:
+   EV+PV and EV+PV+building-load use the **same container**: for the latter, send solar **minus**
+   building consumption (floored at 0) in the `pv_forecast` field.
+
+6. Check it:
    ```
    docker ps
    ```
-   should list the container. Then open `<URL>/health` in a browser (or `curl <URL>/health`) — it
-   should return the model's configuration as JSON (see the API section below). A PV model reports
-   `"has_pv": true`.
+   should list the container as `healthy`. Open `<URL>/health` — it returns the configuration as
+   JSON (see section 5).
 
-From there it's a normal always-on local service: send it `POST <URL>/decide` requests as described
-in the API section, and it answers immediately (a network this size runs in well under a
-millisecond on CPU — no GPU needed). `--restart unless-stopped` brings it back after a reboot or
-crash.
+From there it is a normal always-on service: it does nothing on its own and only answers when
+called. Send `POST <URL>/decide` whenever a decision is needed — on your own 15-minute tick, or
+immediately when a car plugs in. `--restart unless-stopped` brings it back after a crash or a reboot.
 
-To stop it: `docker stop <name>`. To start it again later: `docker start <name>` (no need to
-`docker run` again — it remembers the settings). To pick up a retrained model later, `git pull`,
-then `docker rm -f <name>` and repeat steps 4–5.
+To stop: `docker stop ev-mpc`. To start again: `docker start ev-mpc`. To pick up code changes:
+`git pull`, then rebuild and recreate the container.
 
-## 4. The API
+### Settings (all optional)
+
+| variable | default | meaning |
+|---|---|---|
+| `ENGINE` | `mpc` | `mpc`, or `dqn` to run the legacy trained model instead |
+| `MPC_HAS_PV` | `0` | `1` to require a `pv_forecast` in every request |
+| `MPC_PRICE_QUARTERS` | `96` | how many quarter-hour prices a request must carry (96 = 24 h) |
+| `MPC_PV_QUARTERS` | `96` | same for `pv_forecast` |
+| `MPC_DEFAULT_POWER_KW` | `9.0` | charging power when a station doesn't state its own |
+| `MPC_SITE_MAX_POWER_KW` | unset | cap on total power across all chargers |
+| `MPC_TIME_LIMIT_S` | `10` | solver time limit per request |
+
+## 5. The API
 
 ### `GET /health`
 
-Returns the model's own configuration (station IDs it knows about, price horizon, power
-rating, and `deadline_guard_margin`) so an integrator can sanity-check their setup before
-going live.
+Returns the configuration, so an integrator can check their setup before going live:
+
+```json
+{"status": "ok", "engine": "mpc", "station_ids": null, "power_kw": 9.0,
+ "prices_required": 96, "has_pv": true, "pv_required": 96,
+ "interval_minutes": 15, "site_max_power_kw": null, "time_limit_s": 10.0}
+```
+
+`station_ids: null` means any station ID is accepted — adding a fourth charger needs no change here.
 
 ### `POST /decide`
 
@@ -90,115 +134,77 @@ going live.
 
 ```json
 {
-  "timestamp": "2026-08-31T14:30:00",
+  "timestamp": "2026-09-27T10:45:00",
   "stations": [
-    {"station_id": 1, "present": 1, "remaining_kwh": 12.4, "hours_to_departure": 2.5},
-    {"station_id": 2, "present": 0}
+    {"station_id": 1, "present": 1, "remaining_kwh": 12.4, "hours_to_departure": 6.0},
+    {"station_id": 2, "present": 0},
+    {"station_id": 3, "present": 1, "remaining_kwh": 4.0, "hours_to_departure": 1.0, "max_power_kw": 11.0}
   ],
-  "prices": [0.142, 0.138, 0.130, 0.125, 0.121, 0.119, 0.118, 0.120, 0.124, 0.131, 0.140, 0.152,
-             0.165, 0.171, 0.176, 0.180, 0.178, 0.170, 0.161, 0.150, 0.141, 0.135, 0.130]
+  "prices": [0.142, 0.138, "... 96 values in total ..."],
+  "pv_forecast": [0.0, 0.0, "... 96 values, only when has_pv ..."]
 }
 ```
 
-| Field | Meaning |
+| field | meaning |
 |---|---|
-| `timestamp` | Local wall-clock time (no timezone conversion) for the interval this decision covers |
-| `stations[].station_id` | Must match the station IDs the model was trained on — `1` and `2` for these models |
-| `stations[].present` | Whether an EV is currently plugged in there |
-| `stations[].remaining_kwh` | Energy that EV still needs before it leaves (omit if not present) |
-| `stations[].hours_to_departure` | Time left until it leaves (omit if not present) |
-| `prices` | EUR/kWh, **forward-looking quarter-hour prices**: `prices[0]` is the price for `timestamp` itself, `prices[1]` is 15 minutes later, etc. Exactly **23 values** (the next 5 h 45 min) — `/health` reports this as `prices_required`. Send the plain day-ahead prices; the service averages and normalises them. |
-| `pv_forecast` | **PV models only** (`/health` reports `has_pv: true`): forecast kWh of solar available for EV charging in each of the next 4 quarter-hours, same forward-looking convention as `prices`. For the EV + PV + load model, send solar production **minus** building consumption, floored at 0. Required for PV models, rejected by the EV-only model. |
-
-For a PV model, the same request just adds one line:
-
-```json
-  "pv_forecast": [1.8, 2.1, 2.4, 2.6]
-```
+| `timestamp` | local wall-clock time of the interval being decided. Need not be on a 15-minute boundary — a call at 10:38 decides the 10:38–10:45 remainder correctly |
+| `stations[].station_id` | any integer |
+| `stations[].present` | whether an EV is plugged in |
+| `stations[].remaining_kwh` | energy that EV still needs (omit if not present) |
+| `stations[].hours_to_departure` | time left until it leaves (omit if not present) |
+| `stations[].max_power_kw` | **optional**, per-station charging power; defaults to `power_kw` from `/health` |
+| `prices` | EUR/kWh, consecutive **quarter-hour** values starting at `timestamp`. Exactly `prices_required` of them. Day-ahead prices are hourly — repeat each value 4× |
+| `pv_forecast` | **PV setups only**: kWh of solar available for charging per quarter-hour, same length and convention. For the building-load setup, send solar **minus** consumption, floored at 0 |
 
 **Response:**
 
 ```json
-{"timestamp": "2026-08-31T14:30:00", "decisions": [{"station_id": 1, "charge": 1}, {"station_id": 2, "charge": 0}]}
+{"timestamp": "2026-09-27T10:45:00",
+ "decisions": [{"station_id": 1, "charge": 0}, {"station_id": 2, "charge": 0}, {"station_id": 3, "charge": 1}]}
 ```
 
-`charge: 1` or `0` per station, for the interval that just started. The controller applies it
-and calls again 15 minutes later with fresh numbers. A station reported `present: 0` always
-comes back `charge: 0`.
+`charge: 1` or `0` per station, for the interval that just started. The controller applies it, then
+calls again whenever the next decision is needed — on its own 15-minute tick, or sooner if a car
+arrives or a station's numbers change — with the then-current `remaining_kwh` and
+`hours_to_departure`. The service holds no state between calls; nothing is remembered unless it's in
+the request. A station reported `present: 0` always comes back `charge: 0`.
 
-## 5. What happens inside, per request
+**Errors** are `400` with `{"error": "..."}` for anything wrong with the request (wrong array
+length, unparseable timestamp, missing `pv_forecast`, malformed JSON) and `500` for anything
+unexpected. Either way the service stays up; one bad request never takes it down.
 
-1. **Build the state vector** (24 numbers for EV only, 28 with PV — every one scaled to 0…1 or −1…1):
-   - 12 prices covering the next ~6 hours: the current quarter-hour price, then the average of each
-     following half hour. They are scaled **within those 12** — 0 is the cheapest moment in the window,
-     1 the most expensive — because the decision is about *when* to charge, and absolute price levels
-     shift a lot between seasons
-   - 2 price context values: the current price level (relative to typical prices) and how big the
-     gap between cheapest and dearest is, so a nearly flat price curve isn't mistaken for a big
-     opportunity
-   - 2 time-of-day values (`sin`/`cos` of time-of-day, so midnight and 23:59 look "close" to
-     the network instead of maximally far apart)
-   - 4 numbers per station: `present`, normalized `remaining_kwh`, normalized
-     `hours_to_departure`, and a derived `urgency = remaining_kwh / (hours_to_departure ×
-     9 kW)` — how close the EV is to needing every remaining hour at full charging power just
-     to finish in time.
-2. **Feed it through the network**: a small 2-layer MLP (64 → 64 hidden units) that outputs 2
-   scores per station — one for "don't charge," one for "charge." This is a DQN value network,
-   not a classifier: each score estimates the long-run cost of that choice, and the higher one
-   wins. Each station's decision is made independently, so the approach scales to any number of
-   stations without the number of possible actions exploding.
-3. **Pick the higher-scoring action per station.**
-4. **Apply the deadline guard.** If a station can no longer meet its deadline — that is, if
-   `remaining_kwh > hours_to_departure × 9 kW × 0.96` — the decision is overridden to `charge: 1`
-   regardless of what the network said. This is a deterministic safety floor, not part of the
-   network; see the note in section 7 for why it exists. `/health` reports the margin as
-   `deadline_guard_margin`.
-5. **Force `charge: 0` for any absent station**, and return the result.
+## 6. What happens inside, per request
 
-## 6. How it was trained
+1. **Check the message** — timestamp, stations, and exactly the required number of prices. Anything
+   missing or the wrong length gets a `400` explaining what was wrong.
+2. **Turn the prices into a timeline**: "this is the price at 10:45, at 11:00, …" for the next 24 h.
+3. **Turn each occupied station into a car to plan for**: energy still needed, time left, charging
+   power. Empty stations and already-full cars are set aside and get "don't charge".
+4. **If no car needs energy, stop** and answer "don't charge" for everything — no solving needed.
+5. **Plan every car's whole stay at once.** Find the cheapest set of 15-minute blocks that still
+   fills every car in time. Where there is solar, those blocks are free, so they get used first. If
+   one car physically cannot be filled, it charges flat out and doesn't spoil the plan for the others.
+6. **Keep only the next 15 minutes** of that plan and discard the rest — it was only needed to know
+   whether charging *now* is a good idea.
+7. **Reply** with charge / don't charge per station.
 
-- Simulated 15-minute steps over real 2025 session and price data, split chronologically per
-  station: **55% train / 15% validation / 30% test**.
-- Reward each step: negative of `price × kWh drawn`, minus a shaping penalty if a station is
-  falling behind its charging schedule, minus a larger penalty at departure for any energy left
-  undelivered.
-- Trained with standard DQN (target network, replay buffer of 10,000 transitions, batch size
-  64, epsilon decayed from full exploration to greedy over 350,000 steps).
-- The greedy policy is scored on the validation split after every episode and **the
-  best-scoring weights are kept** — not the last episode's, which vary widely run to run.
+The whole call takes about 0.2 s, of which the planning itself is ~5 ms.
 
-> **Note:** the results below were measured with the previous input state (4 raw prices, 1 hour
-> ahead). The price inputs have since changed to 12 window-scaled prices (~6 hours ahead); these
-> numbers will be updated once the models are retrained and re-measured over several seeds.
-
-**Results on held-out test data (6,658 kWh of demand), averaged over 15 random seeds**, against
-an "always charge immediately" baseline:
-
-| configuration | electricity cost | baseline | saving | energy not delivered |
-|---|---|---|---|---|
-| EV only     | €524.91 | €595.07 | **11.8%** | 3.47 kWh avg, 9.02 kWh worst seed |
-| EV + PV     | €433.70 | €476.31 | **8.9%**  | 1.27 kWh avg, 9.55 kWh worst seed |
-| EV + PV + building load | €456.47 | €507.88 | **10.1%** | 2.24 kWh avg, 5.48 kWh worst seed |
-
-Worst case across all 45 runs is 9.55 kWh undelivered — 0.14% of demand — with no run exceeding
-that in any configuration.
-
-**Single numbers from a single training run are not meaningful here.** Identical settings vary
-enormously by seed: an earlier EV+PV configuration produced anywhere from 0.03 to 69.91 kWh
-undelivered depending only on the random seed. Quote averages over seeds, never one run.
+Re-planning from scratch every interval is what makes it robust: the remaining energy comes from
+live telemetry, new arrivals appear immediately, a driver changing their departure time is picked
+up, and revised prices are used as soon as they arrive.
 
 ## 7. Limitations
 
-- **The deadline guard is doing real work.** The RL policy on its own occasionally strands an EV
-  badly — in seed sweeps, 2 of 5 EV+PV runs left 38–70 kWh undelivered, costing far more in
-  penalties than the entire electricity bill. The cause is a handful of unusually large/long
-  sessions (one is 185 kWh over 33.5 h) that occur only in the test period; nothing in the
-  training or validation data resembles them, and no hyperparameter setting tested fixed it
-  reliably. The guard bounds that risk deterministically. Do not disable it
-  (`--no-deadline-guard`) on a real site.
-- **Train and test are different seasons.** One year of data split chronologically means training
-  is Jan–Jul and testing is Oct–Dec, and the test period has roughly 4× less solar relative to
-  demand. Results are therefore a cross-season generalisation test. More years of data is the
-  real fix for the point above.
-- If the model is retrained with different input features, this file needs updating by hand to
-  match.
+- **Prices and departure times are assumed known.** Day-ahead prices are published 11–35 h ahead,
+  so that holds today; declared departures come from the driver and may be wrong. A car leaving
+  earlier than declared is the main real-world risk, since the plan spends its slack.
+- **Forecast prices are not yet modelled.** When prices become forecasts, plan quality drops with
+  forecast error. Re-planning every 15 minutes absorbs part of that, but it has not been measured.
+- **Solar beyond the supplied forecast is assumed zero**, and prices beyond the supplied window are
+  held flat — deliberately conservative, never counting on data it wasn't given.
+- **Charging is on/off at a fixed power.** Modulating power would save a further ~0.4%.
+- **No battery yet.** The solver is structured to take one as an optional input later.
+- **The site power cap is implemented but unused** (no field in the API yet); it matters once a
+  battery shares the grid connection.
+- Sessions are treated independently, so nothing prevents all three chargers running at once.

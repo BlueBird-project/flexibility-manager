@@ -1,0 +1,23 @@
+services:
+  fm-charging:
+    build: .
+    image: ev-mpc:mqtt
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-sndbx.ewhindelang.de}
+      MQTT_PORT: ${MQTT_PORT:-8883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-fm_charging}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-fm_charging-1}
+      MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+      PRICE_API_BASE: ${PRICE_API_BASE:-http://host.docker.internal:11001}
+      PRICE_MARKET_ID: ${PRICE_MARKET_ID:-2}
+      SITE_LIMIT_KW: ${SITE_LIMIT_KW:-30}
+      DEFAULT_POWER_KW: ${DEFAULT_POWER_KW:-22}
+      BAU_HOURS: ${BAU_HOURS:-10}
+      EFFICIENCY: ${EFFICIENCY:-0.95}
+    secrets:
+      - mqtt_password
+
+secrets:
+  mqtt_password:
+    file: ./secrets/mqtt_password.txt

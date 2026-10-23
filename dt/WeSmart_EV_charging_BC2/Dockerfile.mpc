@@ -1,0 +1,40 @@
+# MPC inference service: solves a small MILP per request instead of running a trained network.
+#
+# Nothing is baked in — no model, no weights, no torch — so ONE image serves every setup and the
+# setup is chosen at run time:
+#   EV only                     docker run -d -p 8080:8080 -e ENGINE=mpc                  ev-mpc:v1
+#   EV + PV                     docker run -d -p 8081:8080 -e ENGINE=mpc -e MPC_HAS_PV=1  ev-mpc:v1
+#   EV + PV + building load     same as EV + PV; the caller sends solar MINUS building load
+#
+# Build:
+#   docker build -f Dockerfile.mpc -t ev-mpc:v1 .
+#
+# Tunables (all optional, shown with their defaults):
+#   MPC_PRICE_QUARTERS=96     consecutive 15-min prices a request must carry (96 = 24 h)
+#   MPC_PV_QUARTERS=96        same for pv_forecast, when MPC_HAS_PV=1
+#   MPC_DEFAULT_POWER_KW=9.0  used when a station does not state its own max_power_kw
+#   MPC_SITE_MAX_POWER_KW     cap on total power across all chargers (unset = no cap)
+#   MPC_TIME_LIMIT_S=10       solver limit per request
+# pulp 4 (the API mpc.py targets) requires Python >= 3.12
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# MILP modelling + the HiGHS solver. No torch: the MPC path never imports it.
+RUN pip install --no-cache-dir "pulp>=4.0" "highspy>=1.7"
+
+# Only what the MPC service needs: the HTTP layer and the optimiser.
+COPY service/__init__.py service/errors.py service/inference_server.py service/mpc_engine.py ./service/
+COPY src/mpc ./src/mpc
+
+ENV ENGINE=mpc \
+    HOST=0.0.0.0 \
+    PORT=8080 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import os,sys,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT','8080') + '/health', timeout=2)" || exit 1
+
+CMD ["python", "-m", "service.inference_server"]

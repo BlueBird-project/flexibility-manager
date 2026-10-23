@@ -35,10 +35,16 @@ from src.env.pv_component import PVComponent
 # -----------------------------
 # Defaults
 # -----------------------------
-DEFAULT_SESSIONS = "src/env/dataset/wesmart_ev_sessions.csv"
+# 3 chargers, pre-filtered to >=15% flexibility; see src/env/dataset/build_sessions.py.
+# The 2-station file is still there as wesmart_ev_sessions.csv (pass --sessions to use it).
+DEFAULT_SESSIONS = "src/env/dataset/wesmart_ev_sessions_3stations.csv"
 DEFAULT_PRICE = "src/env/dataset/price_two_years_15min.xlsx"
 DEFAULT_OUTPUT_DIR = "outputs"
 DEFAULT_SAVED_MODELS_DIR = "saved_models"
+# Subfolder for everything trained on the 3-charger dataset, so it cannot overwrite the
+# committed/dockerized 2-station models in saved_models/EV, EV_PV, EV_PV_Cons.
+# Set to "" to write directly under saved_models/ again.
+RUN_PREFIX = "3_chargers"
 EXAMPLE_PV = "src/env/dataset/solar_production.csv"
 EXAMPLE_CONSUMPTION = "src/env/dataset/common_areas_consumption(in).csv"
 
@@ -48,11 +54,27 @@ EXAMPLE_CONSUMPTION = "src/env/dataset/common_areas_consumption(in).csv"
 POWER_KW = 9.0
 # A session is kept only if its plug-in window is at least this multiple of the
 # time strictly needed to deliver req_kwh at POWER_KW.
-FEASIBILITY_SLACK = 1.5
+FEASIBILITY_SLACK = 1.15
 
-PENALTY_PER_KWH = 5.0
-FIXED_PENALTY = 10.0
-EPISODES = 50
+# Penalties are calibrated against the electricity bill they trade off against, so that
+# "a little energy missing" costs a little. On the test split (14,625 kWh, ~EUR 1,230, i.e.
+# ~EUR 0.084/kWh average) these mean:
+#   - 10% of all energy missing  ->  ~EUR 1,230 of penalty, about the whole bill: unacceptable
+#   -  1% missing                ->  ~EUR 123, clearly worse than any saving it could buy
+#   -  3 kWh missing (0.02%)     ->  ~EUR 3, a rounding error, as it should be
+# The old values (5.0/kWh + 10.0 flat) made 2.9 kWh unmet outweigh EUR 89 of real savings,
+# so the reward ranked a better policy as worse. Undercharge is deterred ~10x over the value
+# of the missing energy; the deadline guard is what actually prevents it.
+PENALTY_PER_KWH = 0.85
+FIXED_PENALTY = 0.0  # a flat charge makes missing 0.1 kWh as bad as missing 2 kWh
+# Now EUR per kWh *behind schedule*, per interval — not a flat charge. The flat version
+# billed the same whether a car was 0.1 kWh or 20 kWh behind, which is what produced EUR 103
+# of penalty for 2.9 kWh of actually-missing energy. A car 5 kWh behind now pays 0.5 EUR for
+# that interval and the charge disappears as it catches up.
+# (The 0/2.5/5/10 sweep that chose 2.5 was for the old flat version.)
+PROGRESS_PENALTY = 0.1
+EPISODES = 150  # learning now happens every 12 h of simulated time, so more episodes
+                # are needed for the same number of gradient steps (see DQNConfig)
 SEED = 1
 TEST_SIZE = 0.3
 # Carved out of what would otherwise be training data, chronologically between train
@@ -131,7 +153,14 @@ def split_df(df: pd.DataFrame, test_size: float = TEST_SIZE, eval_size: float = 
 
 
 def get_run_folder_name(args: argparse.Namespace) -> str:
-    """Configuration name derived purely from the datasets provided on the command line."""
+    """Configuration name derived purely from the datasets provided on the command line,
+    unless --run-name overrides it (experiments that must not overwrite a shipped model).
+
+    Results land under RUN_PREFIX (e.g. saved_models/3_chargers/EV_PV) so the 3-charger
+    runs cannot overwrite the 2-station models that are committed and dockerized.
+    """
+    if getattr(args, "run_name", None):
+        return args.run_name
     parts = ["EV"]  # EV is always the baseline
     if getattr(args, "pv", None) is not None:
         parts.append("PV")
@@ -140,7 +169,8 @@ def get_run_folder_name(args: argparse.Namespace) -> str:
     # Future expansions can be added right here:
     # if getattr(args, "battery", None) is not None:
     #     parts.append("Battery")
-    return "_".join(parts)
+    name = "_".join(parts)
+    return f"{RUN_PREFIX}/{name}" if RUN_PREFIX else name
 
 
 # -----------------------------
@@ -469,9 +499,22 @@ def cmd_train(args: argparse.Namespace) -> int:
         print(f"  Deadline guard: ✓ (force charge when urgency > "
               f"{env.components[0].feasibility_margin})")
 
+    # Monitoring only: the test split is scored every --eval-every episodes so progress is
+    # visible against the always-charge baseline. Checkpoint selection never sees it.
+    test_monitor = None
+    if args.eval_every:
+        test_monitor = make_env(price_df, train_df, pv_df, consumption_df, power_kw=args.power,
+                                penalty_per_kwh=args.penalty_per_kwh, fixed_penalty=args.fixed_penalty,
+                                progress_penalty=args.progress_penalty, price_horizon=args.price_horizon,
+                                pv_horizon=args.pv_horizon, clip_features=clip_features,
+                                price_step_minutes=args.price_step_minutes,
+                                price_encoding=args.price_encoding, verbose=False)
+        test_monitor.reload_data(price_df, test_df)
+
     print("Training Start.....")
     agent.train(env, verbose=verbose, episodes=args.num_episodes,
-                val_env=val_env, val_every=args.val_every)
+                val_env=val_env, val_every=args.val_every,
+                test_env=test_monitor, eval_every=args.eval_every)
 
     # Evaluate on TEST. reload_data keeps the training normalisation constants.
     env.reload_data(price_df, test_df)
@@ -613,9 +656,10 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                    help=f"EUR per kWh unmet at departure (default: {PENALTY_PER_KWH})")
     p.add_argument("--fixed-penalty", type=float, default=FIXED_PENALTY,
                    help=f"Flat EUR penalty for an undercharged departure (default: {FIXED_PENALTY})")
-    p.add_argument("--progress-penalty", type=float, default=None,
-                   help="EUR charged each interval an EV is behind schedule "
-                        "(default: fixed-penalty/2; set 0 to disable this shaping)")
+    p.add_argument("--progress-penalty", type=float, default=PROGRESS_PENALTY,
+                   help=f"EUR charged each interval an EV is behind schedule (default: "
+                        f"{PROGRESS_PENALTY}, chosen by sweep; 0 disables the shaping and is ~3%% "
+                        f"cheaper but doubles unmet energy)")
     p.add_argument("--price-step-minutes", type=int, default=PRICE_STEP_MINUTES,
                    help=f"Spacing of the price values in the state, a multiple of 15 (default: "
                         f"{PRICE_STEP_MINUTES}). The first value is the current quarter-hour; each "
@@ -634,6 +678,11 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                         f"(default: {PV_HORIZON} = 1h at 15-min steps). Only used with --pv. "
                         f"Must match the live service's 'pv_forecast' array length.")
     p.add_argument("--seed", type=int, default=SEED, help=f"Random seed (default: {SEED})")
+    p.add_argument("--run-name", type=str, default=None,
+                   help="Name of the saved_models/<name> and outputs/<name> folders (default: derived "
+                        "from the attached components, e.g. EV_PV). Use it to keep an experiment from "
+                        "overwriting the shipped model; the name is also what `docker build "
+                        "--build-arg MODEL_RUN=<name>` expects.")
     p.add_argument("--val-size", type=float, default=VAL_SIZE,
                    help=f"Fraction of sessions held out (chronologically, between train and test) "
                         f"to pick the best checkpoint (default: {VAL_SIZE}; 0 disables and keeps "
@@ -662,6 +711,10 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("--save-model", choices=["yes", "no"], default="yes", help="Save checkpoints (default: yes)")
     pt.add_argument("--num_episodes", type=int, default=EPISODES,
                     help=f"Number of training episodes (default: {EPISODES})")
+    pt.add_argument("--eval-every", type=int, default=10,
+                    help="Also score the TEST split every N episodes and print it next to the "
+                         "always-charge baseline (monitoring only — never used to pick the "
+                         "checkpoint). 0 disables it (default: 10)")
     pt.add_argument("--val-every", type=int, default=1,
                     help="Run the validation evaluation every N episodes (default: 1)")
     pt.set_defaults(func=cmd_train)

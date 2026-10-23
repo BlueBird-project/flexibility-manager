@@ -3,3 +3,5 @@
 # Docker image small. torch is installed separately in the Dockerfile from
 # the CPU-only wheel index.
 numpy>=1.26
+# The MPC engine's solver (pulp + highspy) is installed by Dockerfile.mpc instead: it needs
+# Python >= 3.12, while the RL images are on 3.11, and the RL path never imports it.

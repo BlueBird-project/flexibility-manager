@@ -3,3 +3,8 @@ numpy==2.4.3
 pandas==3.0.1
 torch==2.7.0
 openpyxl
+wandb
+requests
+pulp==4.0.0
+highspy==1.15.1
+paho-mqtt==2.1.0

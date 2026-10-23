@@ -7,3 +7,9 @@ __pycache__/
 *.pyc
 .venv/
 .idea/
+
+# Secrets -- never commit API keys (e.g. WANDB_API_KEY belongs in the
+# environment, not a file, but this is a defensive backstop)
+.env
+wandb/
+secrets/

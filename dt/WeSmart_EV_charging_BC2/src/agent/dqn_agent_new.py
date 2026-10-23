@@ -20,12 +20,19 @@ Q_TARGET_FILENAME = "q_target_state_dict.pth"
 class DQNConfig:
     gamma: float = .97
     lr: float = 0.0001
-    batch_size: int = 64
-    buffer_capacity: int = 10_000
+    batch_size: int = 256
+    buffer_capacity: int = 100_000  # ~9 episodes; 10k was less than one (~11k steps)
     epsilon_start: float = 1.0
     epsilon_end: float = 0.0
-    epsilon_decay_steps: int = 350_000  # linear decay steps
-    target_update_freq: int = 500  # hard update every N gradient steps
+    epsilon_decay_steps: int = 900_000  # linear decay steps (~55% of a 150-episode run)
+    target_update_freq: int = 250  # hard update every N gradient steps
+    # Learn in one batch every half day of simulated time instead of every interval:
+    # 48 steps x 15 min = 12 h. Each of those does `updates_per_learn` gradient steps on
+    # `batch_size` transitions, so an update sees ~2k transitions (about a day of data)
+    # rather than 64 — far fewer, far steadier updates. learn_every=1 with
+    # updates_per_learn=1 reproduces the original per-interval behaviour.
+    learn_every: int = 48
+    updates_per_learn: int = 4
     hidden_sizes: tuple = (64, 64)
     seed: int | None = 1
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -88,6 +95,8 @@ class DQNAgent:
 
         # Track gradient steps for target updates (fixes mismatch)
         self.grad_steps = 0
+        # env steps seen by the learner, for the learn_every schedule
+        self.learn_steps = 0
 
         self.save = save
         self.save_dir = save_dir
@@ -134,7 +143,33 @@ class DQNAgent:
             self.q.train()
         return self._guard(state_vec, action)
 
+    # ------------------- Validation scoring -------------------
+    UNMET_BUCKET = 0.001  # 0.1% of demand: differences below this are not worth paying for
+
+    @classmethod
+    def _val_score(cls, out: dict) -> tuple[float, float]:
+        """Rank a validation episode by (unmet fraction, then electricity cost) — lower is better.
+
+        Deliberately NOT the reward: the reward mixes euros with shaping penalties, and it
+        ranked a policy that was EUR 89 cheaper (with 0.04% of energy missing) *below*
+        always-charging. Selecting on it therefore kept the wrong checkpoints. Unmet is
+        bucketed so a negligible service difference does not veto a real saving.
+        """
+        ev = out["per_episode"][0]["components"].get("EVComponent", {})
+        required = float(ev.get("required_kwh", 0.0)) or 1.0
+        unmet_frac = float(ev.get("unmet_kwh", 0.0)) / required
+        bucket = round(unmet_frac / cls.UNMET_BUCKET) * cls.UNMET_BUCKET
+        return (bucket, float(ev.get("cost_eur", 0.0)))
+
     # ------------------- Learning -------------------
+    def learn(self) -> None:
+        """Call once per env step; actually trains every `learn_every` steps."""
+        self.learn_steps += 1
+        if self.learn_steps % self.cfg.learn_every:
+            return
+        for _ in range(self.cfg.updates_per_learn):
+            self.optimize()
+
     def optimize(self) -> None:
         if len(self.replay) < self.cfg.batch_size:
             return
@@ -213,8 +248,29 @@ class DQNAgent:
         return json.loads(p.read_text(encoding="utf-8"))
 
     # ------------------- Training loop -------------------
+    @staticmethod
+    def _baseline_of(env, agent) -> dict:
+        """Always-charge reference for a split, so progress can be read as a % saving."""
+        out = agent.evaluate_always_charge(env, verbose=False)
+        ev = out["per_episode"][0]["components"].get("EVComponent", {})
+        return {"cost_eur": float(ev.get("cost_eur", 0.0)),
+                "required_kwh": float(ev.get("required_kwh", 0.0)) or 1.0}
+
+    def _progress_line(self, label: str, ep: int, out: dict, ref: dict | None, marker: str = "") -> str:
+        ev = out["per_episode"][0]["components"].get("EVComponent", {})
+        cost = float(ev.get("cost_eur", 0.0))
+        unmet = float(ev.get("unmet_kwh", 0.0))
+        req = float(ev.get("required_kwh", 0.0)) or 1.0
+        vs = ""
+        if ref:
+            vs = (f" vs RB {ref['cost_eur']:8.2f} "
+                  f"({100 * (cost / ref['cost_eur'] - 1):+5.1f}%)" if ref["cost_eur"] else "")
+        return (f"{label} ep {ep:3d} | cost EUR {cost:8.2f}{vs} | "
+                f"unmet {unmet:7.2f} kWh ({100 * unmet / req:5.2f}%) | "
+                f"R={out['per_episode'][0]['reward']:9.1f}{marker}")
+
     def train(self, env, episodes: int = 1000, verbose: bool = True, start_date=None,
-              val_env=None, val_every: int = 1):
+              val_env=None, val_every: int = 1, test_env=None, eval_every: int = 0):
         """
         Train for `episodes` episodes.
 
@@ -228,6 +284,12 @@ class DQNAgent:
             undercharge penalties.
         """
         best_score, best_state, best_ep = None, None, None
+        # always-charge reference for each split, computed once (it is deterministic)
+        val_ref = self._baseline_of(val_env, self) if val_env is not None else None
+        test_ref = self._baseline_of(test_env, self) if (test_env is not None and eval_every) else None
+        if val_ref:
+            print(f"Baseline (always charge): VAL EUR {val_ref['cost_eur']:.2f}"
+                  + (f" | TEST EUR {test_ref['cost_eur']:.2f}" if test_ref else ""))
 
         for ep in range(episodes):
             obs = env.reset(start_date=start_date)  # np.ndarray state vector
@@ -247,7 +309,7 @@ class DQNAgent:
                     next_state = env.normalize_state(next_obs)
 
                 self.replay.push(state, action, float(reward), next_state, float(done))
-                self.optimize()
+                self.learn()
 
                 state = next_state
                 total_reward += float(reward)
@@ -258,12 +320,21 @@ class DQNAgent:
 
             if val_env is not None:
                 if (ep + 1) % val_every == 0:
-                    out = self.evaluate(val_env, greedy=True, verbose=verbose, label="VAL")
-                    score = float(out["per_episode"][0]["reward"])
-                    if best_score is None or score > best_score:
+                    out = self.evaluate(val_env, greedy=True, verbose=False, label="VAL")
+                    score = self._val_score(out)
+                    improved = best_score is None or score < best_score
+                    if improved:
                         best_score, best_ep = score, ep + 1
                         best_state = {k: v.detach().cpu().clone()
                                       for k, v in self.q.state_dict().items()}
+                    if verbose:
+                        print(self._progress_line("VAL ", ep + 1, out, val_ref,
+                                                  "  <- best so far" if improved else ""))
+                # optional monitoring on the test split; never used for selection
+                if eval_every and test_env is not None and (ep + 1) % eval_every == 0:
+                    t_out = self.evaluate(test_env, greedy=True, verbose=False, label="TEST")
+                    if verbose:
+                        print(self._progress_line("TEST", ep + 1, t_out, test_ref))
             elif ep > 0 and ep % 10 == 0:
                 # sanity check against the greedy policy — note this runs on the
                 # *training* data, so it is a fit check, not a generalisation check
@@ -273,7 +344,7 @@ class DQNAgent:
             self.q.load_state_dict(best_state)
             self.q_target.load_state_dict(best_state)
             print(f"Restored best-validation weights from episode {best_ep} "
-                  f"(VAL reward {best_score:.3f})")
+                  f"(VAL unmet {100 * best_score[0]:.2f}% of demand, cost EUR {best_score[1]:.2f})")
 
         if self.save:
             self.save_checkpoint(env)
