@@ -40,6 +40,34 @@ const COMPUTE_OPT_DATETIME = "2025-07-15T17:00:00+00:00";
             @test result isa Dict
             @test haskey(result, :OPT_status)
         end
+
+    @testset "Constraint Overrides" begin
+        base = (; pilot = "Montcada", Hu = 2, solver = "HiGHS", loglevel = "warn",
+                  compute_datetime = COMPUTE_OPT_DATETIME)
+
+        # Non-`O` kwargs reach the pilot constraints (°C in, Kelvin out).
+        oy = optimize(TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE, TEST_FORECASTS_FILE;
+                      base..., T_low = 22, T_high = 27.5)
+        @test oy[:ox].constraints[:T_low ] ≈ 22.0 + FlexOPTi.KELVIN_OFFSET
+        @test oy[:ox].constraints[:T_high] ≈ 27.5 + FlexOPTi.KELVIN_OFFSET
+
+        # A misspelled kwarg must fail loudly instead of being ignored.
+        @test_throws ArgumentError optimize(TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE,
+                                            TEST_FORECASTS_FILE; base..., T_lwo = 22.0)
+
+        # Values outside the safety envelope (15–30 °C) are clamped to it.
+        oy = @test_logs (:warn, r"clamped") match_mode=:any optimize(
+                 TEST_DIGITAL_TWIN_FILE, TEST_SENSORS_FILE, TEST_FORECASTS_FILE;
+                 base..., T_high = 31.0)
+        @test oy[:ox].constraints[:T_high] ≈ 30.0 + FlexOPTi.KELVIN_OFFSET
+        c = build_constraints(FlexOPTi.Montcada(); SP_low = 14.0, to_kelvin = false)
+        @test c[:SP_low] == 15.0
+        c = build_constraints(FlexOPTi.Montcada(); T_low = 15, T_high = 30, to_kelvin = false)
+        @test (c[:T_low], c[:T_high]) == (15, 30)
+
+        # low > high cannot be repaired by clamping.
+        @test_throws ArgumentError build_constraints(FlexOPTi.Montcada(); T_low = 26.0, T_high = 24.0)
+    end
     end
     
     @testset "Component Tests" begin
