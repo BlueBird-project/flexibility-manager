@@ -10,7 +10,7 @@ import pandas as pd
 from fastapi import Body, FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from fast_inference import ModelInference, load_data, run_backtest, run_production
+from .fast_inference import ModelInference, load_data, run_backtest, run_production
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -146,9 +146,10 @@ def load_api_config() -> ApiConfig:
 
 def resolve_path_fast(config: ApiConfig) -> str:
     if config.path_fast is None:
-        return str(APP_DIR)
+        return str(APP_DIR.parent / "FAST")
 
     candidate = Path(config.path_fast)
+
     if not candidate.is_absolute():
         candidate = (APP_DIR / candidate).resolve()
 

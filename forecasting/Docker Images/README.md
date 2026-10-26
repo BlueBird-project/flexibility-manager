@@ -1,9 +1,34 @@
-# FAST Inference Guide
+# TAIMU Guide
+
+![alt text](6.png)
 
 This folder contains:
 
 - A Dockerized runner for FAST inference using [fast_inference.py](fast_inference.py), [Dockerfile](Dockerfile), and [docker-entrypoint.sh](docker-entrypoint.sh)
 - A FastAPI server in [main.py](main.py), configured by the adjacent [api_config.json](api_config.json)
+
+## Folder and structure to download
+
+This shows how the executable folder should look like for it to work. 
+
+```text
+Taimu/
+├── api/
+│   ├── main_inference.py
+|   ├── fast_inference.py
+|   └── api_config.json
+├── docker_images/
+│   ├── DockerfileForecasting
+│   └── Dockerfile
+├── FAST/
+│   ├── forge
+│   │    ├──positive_pv.py
+│   │    └──....     
+├── ├── translate
+│   │
+│   └── ...
+└── README.md
+```
 
 ## FastAPI mode
 
@@ -32,7 +57,7 @@ FAST_API_CONFIG=/absolute/path/to/my_config.json uvicorn main:app --host 0.0.0.0
 Build the API image with [DockerfileForecasting](DockerfileForecasting):
 
 ```bash
-docker build -t fast-forecast-api -f forecasting/FAST/DockerfileForecasting forecasting/FAST
+docker build -t fast-forecast-api -f docker_images/DockerfileForecasting .
 ```
 
 Run with the default in-image config:

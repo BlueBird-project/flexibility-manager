@@ -14,10 +14,16 @@ def ClassBuilder(path_fast, path_class, type_class):
     subprocess.run(
         ["python", os.path.join(path_fast, type_class, f"{path_class}.py")], check = True
     )
-    with open(f"{type_class}_{path_class}.dill", "rb") as f:
+
+    dill_file = os.path.join(
+        path_fast,
+        f"{type_class}_{path_class}.dill"
+    )
+
+    with open(dill_file, "rb") as f:
         class_fast = dill.load(f)
 
-    os.remove(f"{type_class}_{path_class}.dill")
+    os.remove(dill_file)
 
     return class_fast
 
