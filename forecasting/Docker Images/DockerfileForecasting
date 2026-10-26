@@ -15,11 +15,11 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r /app/requirements.txt
 
-COPY api/main_inference app/api/main_inference.py
+COPY api/main_inference.py /app/api/main_inference.py
 COPY api/fast_inference.py /app/api/fast_inference.py
 COPY api/api_config.json /app/api/api_config.json
-COPY forge /app/forge
-COPY translate /app/translate
+COPY FAST/forge /app/api/forge
+COPY FAST/translate /app/api/translate
 
 EXPOSE 8000
 

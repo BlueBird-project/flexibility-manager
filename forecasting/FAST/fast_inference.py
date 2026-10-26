@@ -20,8 +20,14 @@ def ClassBuilder(path_fast, path_class, type_class):
         f"{type_class}_{path_class}.dill"
     )
 
-    with open(dill_file, "rb") as f:
-        class_fast = dill.load(f)
+    try:
+        with open(dill_file, "rb") as f:
+            class_fast = dill.load(f)
+    except FileNotFoundError:
+        dill_file = os.path.join(
+            os.getcwd(),f"{type_class}_{path_class}.dill")
+        with open(dill_file, "rb") as f:
+            class_fast = dill.load(f)
 
     os.remove(dill_file)
 
