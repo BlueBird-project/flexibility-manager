@@ -20,13 +20,20 @@ Configuration comes from the environment, so no trained model is needed:
     MPC_HAS_PV              1 to require a `pv_forecast` (net of building consumption)
     MPC_DEFAULT_POWER_KW    charging power when a station does not state its own (default 9.0)
     MPC_SITE_MAX_POWER_KW   optional cap on total power across all EVs (unset = no cap)
+    MPC_CHARGING_EFFICIENCY AC/DC conversion loss, in (0, 1] (default 1.0 = no loss modelled)
     MPC_TIME_LIMIT_S        solver time limit per call (default 10)
+    PRICE_API_BASE          Trading Manager base URL (e.g. http://localhost:11001). If set, a
+                            request that omits 'prices' gets them fetched from the TM instead of
+                            being rejected; a request that still sends 'prices' uses those as before.
+    PRICE_MARKET_ID         Trading Manager market id to fetch from (default 2)
 """
 from __future__ import annotations
 
 import logging
 import os
 from datetime import datetime, timedelta
+
+import requests
 
 from service.errors import StateBuilderError
 from src.mpc.mpc import SLOT, EVSession, mpc_decide, slot_start
@@ -49,13 +56,19 @@ class MpcBundle:
 
     def __init__(self, price_quarters: int = 96, pv_quarters: int = 96, has_pv: bool = False,
                  default_power_kw: float = 9.0, site_max_power_kw: float | None = None,
-                 time_limit_s: float = 10.0):
+                 charging_efficiency: float = 1.0, time_limit_s: float = 10.0,
+                 price_api_base: str | None = None, price_market_id: int = 2):
+        if not 0 < charging_efficiency <= 1:
+            raise ValueError(f"charging_efficiency must be in (0, 1], got {charging_efficiency}")
         self.price_quarters = price_quarters
         self.pv_quarters = pv_quarters
         self.has_pv = has_pv
         self.default_power_kw = default_power_kw
         self.site_max_power_kw = site_max_power_kw
+        self.charging_efficiency = charging_efficiency
         self.time_limit_s = time_limit_s
+        self.price_api_base = price_api_base.rstrip("/") if price_api_base else None
+        self.price_market_id = price_market_id
 
     @classmethod
     def from_env(cls) -> "MpcBundle":
@@ -64,7 +77,10 @@ class MpcBundle:
                    has_pv=os.environ.get("MPC_HAS_PV", "0").lower() in ("1", "true", "yes"),
                    default_power_kw=_env_float("MPC_DEFAULT_POWER_KW", 9.0),
                    site_max_power_kw=_env_float("MPC_SITE_MAX_POWER_KW", None),
-                   time_limit_s=_env_float("MPC_TIME_LIMIT_S", 10.0))
+                   charging_efficiency=_env_float("MPC_CHARGING_EFFICIENCY", 1.0),
+                   time_limit_s=_env_float("MPC_TIME_LIMIT_S", 10.0),
+                   price_api_base=os.environ.get("PRICE_API_BASE") or None,
+                   price_market_id=_env_int("PRICE_MARKET_ID", 2))
 
     # -- request handling ---------------------------------------------------
 
@@ -81,7 +97,12 @@ class MpcBundle:
         if not isinstance(stations, list) or not stations:
             raise StateBuilderError("'stations' must be a non-empty list")
 
-        prices = self._series(payload.get("prices"), "prices", self.price_quarters, now)
+        raw_prices = payload.get("prices")
+        if raw_prices is not None:
+            prices = self._series(raw_prices, "prices", self.price_quarters, now)
+        else:
+            start = slot_start(now)
+            prices = self._fetch_prices(start, start + self.price_quarters * SLOT)
         pv = None
         if self.has_pv:
             pv = self._series(payload.get("pv_forecast"), "pv_forecast", self.pv_quarters, now)
@@ -119,7 +140,8 @@ class MpcBundle:
         charge = {sid: 0 for sid in ids}
         if evs:  # no connected EV that needs energy -> nothing to solve, everything stays 0
             result = mpc_decide(evs, prices, now, site_max_power_kw=self.site_max_power_kw,
-                                pv_forecast=pv, time_limit_s=self.time_limit_s)
+                                pv_forecast=pv, charging_efficiency=self.charging_efficiency,
+                                time_limit_s=self.time_limit_s)
             decisions = result.get("decisions") or {}
             if not decisions:
                 # no solution at all (e.g. a site cap makes it infeasible): charge everything
@@ -152,6 +174,48 @@ class MpcBundle:
         first = slot_start(now)
         return {first + k * SLOT: v for k, v in enumerate(floats)}
 
+    def _fetch_prices(self, start: datetime, end: datetime) -> dict:
+        """EUR/kWh per 15-min slot in [start, end), fetched from the Trading Manager.
+
+        Mirrors EWH_EV_charging_BC7/run_mpc_service.py's fetch_prices(): the TM's `ts` is the END
+        of each quarter hour; sequence 1 wins when two sequences cover the same slot. A slot the
+        day-ahead market hasn't published yet gets the price of the same quarter hour on the most
+        recent earlier day that has one (up to 7 days back).
+
+        ponytail: treats `start`/`end` as naive-but-UTC, same convention as the rest of this
+        service ("no timezone conversion is applied"); a deployment spanning multiple timezones
+        needs real tz-awareness here.
+        """
+        if not self.price_api_base:
+            raise StateBuilderError(
+                "'prices' was omitted and PRICE_API_BASE is not configured; either send "
+                "'prices' explicitly or set PRICE_API_BASE to a Trading Manager URL")
+        ms = lambda dt: int(dt.timestamp() * 1000)  # noqa: E731
+        url = (f"{self.price_api_base}/api/market/{self.price_market_id}/offer"
+               f"?ts_from={ms(start - timedelta(days=2))}&ts_to={ms(end)}")
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        known: dict[datetime, float] = {}
+        for r in response.json():
+            if r.get("ts") is None or r.get("cost") is None:
+                continue
+            slot = datetime.fromtimestamp(int(r["ts"]) / 1000) - SLOT
+            if str(r.get("sequence")) == "1" or slot not in known:
+                known[slot] = float(r["cost"]) / 1000.0  # EUR/MWh -> EUR/kWh
+
+        prices, t = {}, start
+        while t < end:
+            same_time = (t - timedelta(days=d) for d in range(8))
+            price = next((known[x] for x in same_time if x in known), None)
+            if price is None:
+                raise StateBuilderError(
+                    f"no price from the Trading Manager for {t.isoformat()} or the same time "
+                    f"in the past week ({url})")
+            prices[t] = price
+            t += SLOT
+        return prices
+
     def health(self) -> dict:
         return {
             "status": "ok",
@@ -163,5 +227,6 @@ class MpcBundle:
             "pv_required": self.pv_quarters if self.has_pv else 0,
             "interval_minutes": INTERVAL_MINUTES,
             "site_max_power_kw": self.site_max_power_kw,
+            "charging_efficiency": self.charging_efficiency,
             "time_limit_s": self.time_limit_s,
         }
