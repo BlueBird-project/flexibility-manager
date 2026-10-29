@@ -59,6 +59,13 @@ All keyword arguments override fields of the default options object `O`
   otherwise be infeasible. Lower it to let the optimizer trade comfort for
   money deliberately.
 
+## Asset Constraints
+Any keyword that is not a field of `O` is forwarded to the pilot's
+`build_constraints` (see `?FlexOPTi.build_constraints`). Each constraint is a
+single scalar applied over the whole horizon. Unknown keywords throw an
+`ArgumentError`.
+Example (Montcada, °C): `T_low = 21.0, T_high = 26.0, SP_low = 19.0`.
+
 ## Logging Parameters
 - `loglevel::String`  
   Logging verbosity (`"debug"`, `"info"`, `"warn"`, `"error"`).  
@@ -96,10 +103,15 @@ function optimize(digital_twin_file,
 
 	# Standard code parameters
 	o = default_code_parameter()
-	# Override defaults from keyword args (kwargs... is a NamedTuple)
+	# Override defaults from keyword args (kwargs... is a NamedTuple).
+	# Fields of `O` configure the run; anything else is a constraint override
+	# forwarded to the pilot's `build_constraints`.
+	constraint_kwargs = Dict{Symbol, Any}()
 	for (k, v) in kwargs
         if hasproperty(o, k)
             setproperty!(o, k, v)
+        else
+            constraint_kwargs[k] = v
         end
     end
 
@@ -112,8 +124,20 @@ function optimize(digital_twin_file,
 		        FM.optimize(args ; pilot = \"PilotName\", kwargs...)"))
 	elseif o.pilot isa String
 		@info "Working with pilot $(o.pilot)"
-		o.pilot = resolve_building(o.pilot) # o.pilot data structure for multiple dispatch 
+		o.pilot = resolve_building(o.pilot) # o.pilot data structure for multiple dispatch
 	end
+
+	# Built before reading any input so that a misspelled kwarg fails fast
+	# instead of being silently ignored.
+	constraint_names = Tuple(keys(constraint_kwargs))
+	if !hasmethod(build_constraints, Tuple{typeof(o.pilot)}, constraint_names)
+		throw(ArgumentError("Unknown keyword argument(s) $(join(constraint_names, ", ")) " *
+		        "for pilot $(nameof(typeof(o.pilot))): neither an option of `O` nor a " *
+		        "constraint accepted by `build_constraints`. See `?FlexOPTi.build_constraints`."))
+	end
+	@info "Building the constraints."
+	isempty(constraint_kwargs) || @info "Constraint overrides: $(join(["$k = $v" for (k, v) in constraint_kwargs], ", "))"
+	constraints = build_constraints(o.pilot; constraint_kwargs...)
 
 	@info "Starting one step optimization"
 
@@ -132,9 +156,6 @@ function optimize(digital_twin_file,
 	# Fetch day-ahead market prices; updates o.Hu in-place if o.variable_Hu == true
 	@info "Fetching market prices (country=$(o.market_country)) from $(o.tm_base_url)."
 	prices, prices_quality = fetch_market_prices(o)
-
-	constraints = build_constraints(o.pilot)
-	@info "Building the constraints."
 
 	# Build the dynamics (dispatched per pilot)
 	dynamo = build_dynamics(o.pilot, o, digital_twin, sensors, forecasts)

@@ -12,8 +12,15 @@ class EVChargingEnv:
 
     Args:
         price_df: DataFrame with columns ['date', 'price'].
-        sessions_df: DataFrame with columns ['arrival', 'departure', 'kwh_needed', 'station_id'].
-        power_kw: Charging power in kW (same for every station).
+        sessions_df: DataFrame with columns ['arrival', 'departure', 'req_kwh',
+                     'station_id'], plus an optional per-session 'power_kw'
+                     column -- each EV can charge at its own rate (e.g. a
+                     standard 5/7/9/11/22 kW rating). Sessions without a
+                     'power_kw' value (including the whole column being
+                     absent, e.g. an older dataset) fall back to
+                     `default_power_kw`.
+        default_power_kw: Charging power (kW) used for any session that
+                     doesn't specify its own power_kw.
         interval_minutes: Decision interval length in minutes (e.g. 15).
         price_window: Number of previous price steps to include in state.
         penalty_per_kwh: € penalty per remaining kWh when EV departs undercharged.
@@ -22,20 +29,27 @@ class EVChargingEnv:
                      where at least one EV is present.
         power_limit_kw: Optional shared power cap (kW) across all stations for a
                      single interval. Charging stays binary per station (each
-                     station draws exactly power_kw or 0 -- no partial power),
-                     so at most floor(power_limit_kw / power_kw) stations can
-                     charge at once. If more stations request charging (action
-                     1) than that, the most urgent ones (least achievable
-                     charge remaining relative to time left) win priority; the
+                     station draws its own session's power_kw or 0 -- no
+                     partial power), so at most as many stations as fit
+                     their combined power_kw under the cap can charge at
+                     once. If more stations request charging (action 1)
+                     than the cap allows, the most urgent ones (least
+                     achievable charge remaining relative to time left) win
+                     priority, filled greedily until the cap is reached; the
                      rest are curtailed for that interval as if their action
                      had been 0. None (default) disables the cap.
     """
+
+    # Ceiling on the "urgency" station feature (see _build_state) -- unlike
+    # every other feature, it's a raw ratio with no denominator floor, so
+    # it isn't bounded like the rest of the state without this cap.
+    URGENCY_CAP = 5.0
 
     def __init__(
             self,
             price_df: pd.DataFrame,
             sessions_df: pd.DataFrame,
-            power_kw: float = 9.0,
+            default_power_kw: float = 9.0,
             interval_minutes: int = 15,
             price_window: int = 3,
             penalty_per_kwh: float = 5.0,
@@ -46,7 +60,8 @@ class EVChargingEnv:
         # ---- store params ------------------------------------------------
         self.norm_max_hours = (sessions_df["departure"] - sessions_df["arrival"]).dt.total_seconds().max() / 3600
         self.norm_max_kwh = sessions_df["req_kwh"].max()
-        self.power_kw = power_kw
+        self.default_power_kw = default_power_kw
+        self.norm_max_power_kw = self._power_column(sessions_df).max()
         self.interval_minutes = interval_minutes
         self.interval_td = pd.Timedelta(minutes=interval_minutes)
         self.price_window = price_window
@@ -55,6 +70,7 @@ class EVChargingEnv:
         self.skip_empty = skip_empty
         self.power_limit_kw = power_limit_kw
         self._session_acc = {}
+        self._sessions_at_cache = None
 
         # ---- price data ---------------------------------------------------
         price_df = price_df.copy()
@@ -66,11 +82,13 @@ class EVChargingEnv:
         self.price_df = price_df
         # build a Series indexed by aligned timestamps for fast lookup
         self.price_series = price_df.set_index("date")["price"]
+        self.norm_max_price = float(self.price_series.max())
 
         # ---- session data -------------------------------------------------
         sessions_df = sessions_df.copy()
         sessions_df["arrival"] = pd.to_datetime(sessions_df["arrival"])
         sessions_df["departure"] = pd.to_datetime(sessions_df["departure"])
+        sessions_df["power_kw"] = self._power_column(sessions_df)
         self.sessions_df = sessions_df.sort_values("arrival").reset_index(drop=True)
 
         # ---- stations -----------------------------------------------------
@@ -82,6 +100,7 @@ class EVChargingEnv:
         # ---- time boundaries ----------------------------------------------
         self.t_min = self._floor_time(price_df["date"].min())
         self.t_max = price_df["date"].max()
+        self._build_price_grid()
 
         # ---- per‑station bookkeeping (set in reset) -----------------------
         self.current_time: Optional[pd.Timestamp] = None
@@ -94,6 +113,14 @@ class EVChargingEnv:
         self.done = False
         self.printer()
 
+    def _power_column(self, sessions_df: pd.DataFrame) -> pd.Series:
+        """Per-session charging power (kW), falling back to
+        `default_power_kw` for any session (or whole dataset) that doesn't
+        specify its own -- keeps older sessions_df's without a power_kw
+        column working unchanged."""
+        if "power_kw" in sessions_df.columns:
+            return sessions_df["power_kw"].fillna(self.default_power_kw).astype(float)
+        return pd.Series(self.default_power_kw, index=sessions_df.index, dtype=float)
 
     def printer(self):
         # Assuming 'env' is already initialized (e.g., env = EVChargingEnv(...))
@@ -104,33 +131,46 @@ class EVChargingEnv:
         print("-" * 60)
 
         # 1. Price Breakdown
-        print(f"1. MARKET PRICES ({1 + self.price_window} dimensions):")
+        print(f"1. MARKET PRICES ({self.price_window + 1} dimensions, each min-max "
+              f"normalized WITHIN this window -- 0=cheapest visible, 1=priciest):")
         print(f"   • Index [0]      : Target Price (t+1)")
         for k in range(1, self.price_window + 1):
             print(f"   • Index [{k}]      : Future Horizon Price (t+1+{k})")
+        idx_wmin = self.price_window + 1
+        idx_wmax = idx_wmin + 1
+        print(f"   • Index [{idx_wmin}]      : Window Min Price (raw EUR/kWh, this window's price level)")
+        print(f"   • Index [{idx_wmax}]      : Window Max Price (raw EUR/kWh, this window's price level)")
 
         # 2. Time Breakdown
-        idx_sin = 1 + self.price_window
+        idx_sin = idx_wmax + 1
         idx_cos = idx_sin + 1
         print(f"\n2. TIME ENCODING (2 dimensions):")
         print(f"   • Index [{idx_sin}]      : Sin Component of Time (t+1 fraction of day)")
         print(f"   • Index [{idx_cos}]      : Cos Component of Time (t+1 fraction of day)")
 
         # 3. Station Breakdown (Simplified)
-        print(f"\n3. EV CHARGING STATIONS ({4 * self.n_stations} dimensions total):")
+        print(f"\n3. EV CHARGING STATIONS ({8 * self.n_stations} dimensions total):")
         print(f"   There are {self.n_stations} total stations registered: {self.station_ids}")
-        print(f"   Each station adds 4 features sequentially (starting at Index {idx_cos + 1}):")
+        print(f"   Each station adds 8 features sequentially (starting at Index {idx_cos + 1}):")
         print(f"     - Feature 1 : EV Present Flag (0.0 or 1.0)")
         print(f"     - Feature 2 : Remaining Energy Needed (kWh)")
         print(f"     - Feature 3 : Hours Until Departure")
         print(f"     - Feature 4 : Urgency Coefficient (Remaining kWh / Max Possible kWh)")
+        print(f"     - Feature 5 : Charging Power for this EV's session (kW, 0 if absent)")
+        print(f"     - Feature 6 : Price Percentile Until Departure (fraction of remaining "
+              f"slots strictly cheaper than now -- 0=cheapest, ~1=priciest; percentile, not "
+              f"min-max, so it's robust to one-off price spikes in the window)")
+        print(f"     - Feature 7 : Min Price Remaining Before Departure (raw EUR/kWh)")
+        print(f"     - Feature 8 : Should-Charge-Greedy Flag (1.0 if now is one of the cheapest "
+              f"remaining slots the exact-optimal algorithm would pick to meet this EV's "
+              f"remaining energy need, 0.0 otherwise)")
 
         print("-" * 60)
         print(f"Action Size: {self.action_size} dimensions (Binary decisions per station)")
         if self.power_limit_kw is not None:
-            max_active = int(self.power_limit_kw // self.power_kw)
-            print(f"Shared power cap: {self.power_limit_kw} kW "
-                  f"(at most {max_active}/{self.n_stations} stations charging at once)")
+            print(f"Shared power cap: {self.power_limit_kw} kW total across stations "
+                  f"(per-session power now varies, so the number of stations that fit "
+                  f"depends on which EVs are active)")
         print("=" * 60 + "\n")
     # ------------------------------------------------------------------
     #  Time helpers
@@ -154,6 +194,37 @@ class EVChargingEnv:
         # before any price data – return first available price
         return float(self.price_series.iloc[0])
 
+    def _build_price_grid(self) -> None:
+        """Precompute prices on a fixed interval_minutes grid starting at
+        t_min, one entry per interval_td step, using the exact same
+        forward-fill rule as _get_price(). Every time value _build_state()
+        ever asks about (current_time and t_min are both floored/advanced
+        in whole interval_td steps) lands exactly on this grid, so a slice
+        of this array is bit-identical to calling _get_price() at each of
+        those times individually -- but as ONE vectorized numpy op instead
+        of up to ~97 separate Python-level calls (each its own Timestamp
+        add + binary search) per station per step. That loop, needed for
+        price_rank_remaining/min_price_remaining (see _build_state()), was
+        the actual bottleneck once price_window widened and per-station
+        lookahead was added -- confirmed: a screening sweep config went
+        from a few minutes to ~3 hours after those features were added.
+        """
+        n_grid = int(np.ceil((self.t_max - self.t_min) / self.interval_td)) + 2
+        grid_times = self.t_min + np.arange(n_grid) * self.interval_td
+        pos = self.price_series.index.searchsorted(grid_times, side="right") - 1
+        pos = np.clip(pos, 0, len(self.price_series) - 1)
+        self._price_grid = self.price_series.values[pos].astype(np.float64)
+
+    def _price_slice(self, t: pd.Timestamp, n_steps: int) -> np.ndarray:
+        """Vectorized equivalent of
+        [self._get_price(t + k*interval_td) for k in range(n_steps)].
+        Indices outside the grid clip to the first/last known price, same
+        edge behavior as _get_price().
+        """
+        start = int(round((t - self.t_min) / self.interval_td))
+        idx = np.clip(np.arange(start, start + n_steps), 0, len(self._price_grid) - 1)
+        return self._price_grid[idx]
+
     # ------------------------------------------------------------------
     #  Session lookup helpers
     # ------------------------------------------------------------------
@@ -163,7 +234,18 @@ class EVChargingEnv:
 
         An EV is present if  arrival <= t + interval  AND  departure > t,
         i.e. it overlaps the interval [t, t + interval).
+
+        Single-entry memoized on t: every step() call asks this for the same
+        current_time 2-3 times in a row (once directly, once via
+        _sync_sessions(), once more via _skip_to_next_vehicle()'s first
+        check), each redoing a full pandas filter over every session. Since
+        the return value is a pure function of t and self.sessions_df, and
+        t only ever advances, caching the single most recent (t, result)
+        pair is exact -- not an approximation -- as long as it's invalidated
+        whenever sessions_df changes (see reset()/reload_data()).
         """
+        if self._sessions_at_cache is not None and self._sessions_at_cache[0] == t:
+            return self._sessions_at_cache[1]
         t_end = t + self.interval_td
         df = self.sessions_df
         present = df[(df["arrival"] < t_end) & (df["departure"] > t)]
@@ -173,6 +255,7 @@ class EVChargingEnv:
             # if multiple sessions per station overlap somehow, keep latest arrival
             if idx not in result or row["arrival"] > result[idx]["arrival"]:
                 result[idx] = row
+        self._sessions_at_cache = (t, result)
         return result
 
     def _any_vehicle_from(self, t: pd.Timestamp) -> Optional[pd.Timestamp]:
@@ -209,36 +292,44 @@ class EVChargingEnv:
             return 0.0
 
         fraction = (eff_end - eff_start).total_seconds() / self.interval_td.total_seconds()
-        return self.power_kw * (self.interval_minutes / 60.0) * fraction
+        return session["power_kw"] * (self.interval_minutes / 60.0) * fraction
 
     # ------------------------------------------------------------------
     #  Shared power cap
     # ------------------------------------------------------------------
     def _select_charging_stations(self, t: pd.Timestamp, sessions: dict, requested: list) -> set:
         """Given stations that requested to charge this interval, return the
-        subset actually allowed to under the shared power_limit_kw cap.
+        subset actually allowed under the shared power_limit_kw cap.
 
-        Every charging station draws the same power_kw (binary per-station
-        decision, no partial power), so at most floor(power_limit_kw /
-        power_kw) can be active at once. When the request exceeds that,
-        priority goes to the most urgent EVs -- highest remaining_kwh
-        relative to what's still achievable before departure.
+        Each session now draws its own power_kw (no longer uniform), so
+        "how many fit" isn't a simple count -- rank requests by urgency
+        (highest remaining_kwh relative to what's still achievable before
+        departure) and greedily admit them in that order while their
+        summed power_kw stays within the cap. A less urgent but
+        lower-power session can end up admitted where a more urgent,
+        higher-power one wouldn't fit; that's intentional -- skipping a
+        request that doesn't fit and moving on to the next-most-urgent one
+        that does makes better use of the shared capacity than leaving it
+        idle.
         """
         if self.power_limit_kw is None or not requested:
-            return set(requested)
-
-        max_active = int(self.power_limit_kw // self.power_kw)
-        if len(requested) <= max_active:
             return set(requested)
 
         def urgency(s_idx: int) -> float:
             sess = sessions[s_idx]
             hours_left = max((sess["departure"] - t).total_seconds() / 3600.0, 0.0)
-            max_possible = hours_left * self.power_kw
+            max_possible = hours_left * sess["power_kw"]
             return self.remaining_kwh[s_idx] / (max_possible + 1e-6)
 
         ranked = sorted(requested, key=urgency, reverse=True)
-        return set(ranked[:max_active])
+        allowed = set()
+        total_power = 0.0
+        for s_idx in ranked:
+            p = sessions[s_idx]["power_kw"]
+            if total_power + p <= self.power_limit_kw + 1e-9:
+                allowed.add(s_idx)
+                total_power += p
+        return allowed
 
     # ------------------------------------------------------------------
     #  State construction
@@ -246,20 +337,54 @@ class EVChargingEnv:
     def _build_state(self) -> np.ndarray:
         """
         State vector layout:
-          [price_t+1,
-           price_t, price_t-1, …, price_t-(window-1),   (price_window values)
+          [price_t+1, price_t+2, …, price_t+1+window,   (price_window+1 values,
+             each min-max normalized WITHIN this window: 0 = cheapest price
+             currently visible, 1 = priciest -- tells the agent directly
+             whether "now" is relatively cheap without it having to learn
+             that from 13 raw numbers itself),
+           window_min, window_max,                       (raw €/kWh, so the
+             *level*/spread of this window isn't lost to the within-window
+             normalization above -- normalize_state() scales these two)
            sin(time), cos(time),
            --- for each station (ordered by station index) ---
-           ev_present (0/1), remaining_kwh, hours_until_departure]
+           ev_present (0/1), remaining_kwh, hours_until_departure, urgency,
+           power_kw (this session's own charging rate, 0 if absent),
+           price_rank_remaining, min_price_remaining, should_charge_greedy
+           (see below)]
+
+        These three exist because the shared price_window (a few hours) is
+        far shorter than a session's dwell time (up to 24h), so the fixed
+        window alone can't tell a station whether a cheaper slot exists
+        later today, before ITS OWN departure. Since prices are fully known
+        (this is offline/backtest data, same assumption used to compute the
+        exact-optimal cost baseline), we compute these directly instead of
+        making the network infer them via long-horizon bootstrapping
+        through a window it can't see past:
+          - price_rank_remaining: PERCENTILE rank (fraction of remaining
+            slots strictly cheaper than now) against all prices between now
+            and THIS station's departure. Percentile, not min-max, so one
+            outlier price spike in the window doesn't compress everything
+            else toward 0 (min-max was the original, weaker version of
+            this feature -- percentile is robust to that skew).
+          - min_price_remaining: that same window's raw minimum price
+            (€/kWh) -- normalize_state() scales this one.
+          - should_charge_greedy: 1.0 if "now" is one of the cheapest
+            remaining slots that the exact-optimal algorithm (sort by
+            price, take the cheapest until req_kwh is met -- the same
+            algorithm used to compute the ceiling savings figure we
+            compare against) would pick for this station, 0.0 otherwise.
+            Hands the agent the optimal decision rule as an input feature,
+            not the outcome of the episode -- it still has to learn to
+            weigh it against curtailment risk, urgency, etc.
         """
         t = self.current_time + self.interval_td
 
-        # --- prices ---
-        next_price = self._get_price(t)
-        prev_prices = []
-        # with + is next prices, - is previous
-        for k in range(1, self.price_window + 1):
-            prev_prices.append(self._get_price(t + k * self.interval_td))
+        # --- prices: min-max normalized within the visible window ---
+        window_prices = self._price_slice(t, self.price_window + 1)
+        window_min = float(window_prices.min())
+        window_max = float(window_prices.max())
+        spread = window_max - window_min
+        norm_prices = ((window_prices - window_min) / (spread + 1e-6)).tolist()
 
         # --- time encoding (fraction of day) ---
         minutes_of_day = t.hour * 60 + t.minute
@@ -275,20 +400,73 @@ class EVChargingEnv:
                 sess = sessions[s_idx]
                 ev_present = 1.0
                 remaining = self.remaining_kwh[s_idx]
+                power_kw = sess["power_kw"]
                 hours_left = max(
                     (sess["departure"] - t).total_seconds() / 3600.0, 0.0
                 )
-                max_possible = hours_left * self.power_kw
-                urgency = remaining / (max_possible + 1e-6)
+                max_possible = hours_left * power_kw
+                # Unlike every other station feature (all bounded to
+                # roughly [-1,1] or [0,1]), this ratio is unbounded and
+                # blows up as hours_left -> 0 for any undercharged EV --
+                # confirmed empirically up to ~6000 right before departure.
+                # Every undercharged session passes through that moment,
+                # so it's not a rare edge case, and it fed values orders of
+                # magnitude larger than every other input straight into
+                # the network. Capped at URGENCY_CAP: >1.0 already means
+                # "can't fully finish even at max power", so the network
+                # loses no real signal by not distinguishing "5x infeasible"
+                # from "6000x infeasible".
+                urgency = min(remaining / (max_possible + 1e-6), self.URGENCY_CAP)
+
+                # --- price info spanning THIS station's own remaining
+                #     dwell time, not the shared (much shorter) window ---
+                steps_left = max(0, int(hours_left * 60 / self.interval_minutes))
+                remaining_prices = self._price_slice(t, steps_left + 1)
+                min_remaining = float(remaining_prices.min())
+                current_price = float(remaining_prices[0])
+                # Percentile rank, NOT min-max rank: min-max compresses
+                # almost everything near 0 whenever there's a single price
+                # spike in the window (common with real electricity
+                # prices), making "top 10% cheapest" indistinguishable from
+                # "top 40% cheapest" to the network. Percentile (fraction
+                # of remaining slots strictly cheaper than now) is robust
+                # to that skew and is what actually matters for a
+                # sort-and-take-cheapest optimal policy.
+                price_rank_remaining = float(np.mean(remaining_prices < current_price))
+                min_price_remaining = min_remaining
+
+                # --- literal greedy-optimal recommendation ---
+                # The exact-optimal policy (computed separately as our
+                # ceiling metric) sorts this station's remaining slots by
+                # price and takes the cheapest ones until req_kwh is met.
+                # Compute that same threshold here and tell the agent
+                # directly whether THIS slot would be one of the ones the
+                # optimal algorithm picks -- handing it the decision rule
+                # as an input, not the outcome of the whole episode. Still
+                # has to learn to trust/combine it with curtailment risk,
+                # urgency, etc., not just copy it.
+                interval_h = self.interval_minutes / 60.0
+                max_per_slot = power_kw * interval_h
+                k_needed = int(np.ceil(remaining / (max_per_slot + 1e-9)))
+                k_needed = max(1, min(k_needed, len(remaining_prices)))
+                threshold_price = float(np.partition(remaining_prices, k_needed - 1)[k_needed - 1])
+                should_charge_greedy = 1.0 if current_price <= threshold_price + 1e-9 else 0.0
 
             else:
                 ev_present = 0.0
                 remaining = 0.0
                 hours_left = 0.0
                 urgency = 0.0
-            station_feats.extend([ev_present, remaining, hours_left, urgency])
+                power_kw = 0.0
+                price_rank_remaining = 0.0
+                min_price_remaining = 0.0
+                should_charge_greedy = 0.0
+            station_feats.extend([
+                ev_present, remaining, hours_left, urgency, power_kw,
+                price_rank_remaining, min_price_remaining, should_charge_greedy,
+            ])
 
-        state = [next_price] + prev_prices + [sin_time, cos_time] + station_feats
+        state = norm_prices + [window_min, window_max] + [sin_time, cos_time] + station_feats
         return np.array(state, dtype=np.float32)
 
     # ------------------------------------------------------------------
@@ -296,8 +474,9 @@ class EVChargingEnv:
     # ------------------------------------------------------------------
     @property
     def observation_size(self) -> int:
-        # 1 (next price) + price_window + 2 (sin, cos) + 3 * n_stations
-        return 1 + self.price_window + 2 + 4 * self.n_stations
+        # (price_window+1) normalized prices + 2 (window_min, window_max)
+        # + 2 (sin, cos) + 8 * n_stations
+        return (self.price_window + 1) + 2 + 2 + 8 * self.n_stations
 
     @property
     def action_size(self) -> int:
@@ -321,6 +500,7 @@ class EVChargingEnv:
         self.cumulative_cost = np.zeros(self.n_stations, dtype=np.float64)
         self._active_session_ids = {}  # station_idx -> session index in self.sessions_df
         self._session_acc = {}
+        self._sessions_at_cache = None
         # load initial sessions & their energy needs
         self._sync_sessions()
 
@@ -419,7 +599,7 @@ class EVChargingEnv:
                 continue
             sess = sessions[s_idx]
             time_left_h = max((sess['departure'] - t_end).total_seconds() / 3600, 0)
-            max_possible = time_left_h * self.power_kw * margin
+            max_possible = time_left_h * sess["power_kw"] * margin
             penalize_past = 0
             # if its impossible to fully charge (considering a margin) the EV, penalty
             if self.remaining_kwh[s_idx] > max_possible and sess["departure"] > t_end:
@@ -452,8 +632,14 @@ class EVChargingEnv:
 
         # ---- 5. Skip empty intervals if configured -----------------------
         if self.skip_empty:
+            # per-station array now (positive = penalty magnitude, same sign
+            # convention as info["penalties"] elsewhere) -- kept attributed
+            # to the station it belongs to instead of collapsing to one
+            # scalar, so callers building a per-station reward vector (see
+            # dqn_agent.py train()) see it correctly, not folded away.
             skipped_penalties = self._skip_to_next_vehicle()
-            reward += skipped_penalties
+            reward -= float(skipped_penalties.sum())
+            info["penalties"] += skipped_penalties
 
         if self.current_time > self.t_max:
             self.done = True
@@ -475,16 +661,19 @@ class EVChargingEnv:
                 self.remaining_kwh[s_idx] = sess["req_kwh"]
                 self._active_session_ids[s_idx] = sess_id
 
-    def _skip_to_next_vehicle(self) -> float:
+    def _skip_to_next_vehicle(self) -> np.ndarray:
         """Advance current_time until at least one EV is present.
 
         While skipping, if any EV departs with remaining energy a penalty
         is applied (they were never charged because no vehicle was flagged –
         this is a safety net).
 
-        Returns accumulated penalty (negative contribution to reward).
+        Returns a per-station array of penalty magnitudes (positive =
+        penalty, same sign convention as info["penalties"] -- kept
+        per-station rather than collapsed to one scalar so callers can
+        still attribute it to the right station's reward).
         """
-        penalty_total = 0.0
+        penalty_total = np.zeros(self.n_stations)
 
         while True:
             sessions = self._sessions_at(self.current_time)
@@ -504,7 +693,7 @@ class EVChargingEnv:
                                     self.penalty_per_kwh * self.remaining_kwh[s_idx]
                                     + self.fixed_penalty
                             )
-                            penalty_total -= pen
+                            penalty_total[s_idx] += pen
                             self.remaining_kwh[s_idx] = 0.0
                             self._active_session_ids.pop(s_idx, None)
 
@@ -522,9 +711,9 @@ class EVChargingEnv:
     def get_session_log_df(self) -> pd.DataFrame:
         """
         Return a per-EV session DataFrame with concrete metrics.
-        Columns: session_id, station_id, arrival, departure, energy_needed_kwh,
-                 energy_delivered_kwh, unmet_kwh, pct_met, energy_cost_eur,
-                 penalty_eur, avg_price_eur_per_kwh
+        Columns: session_id, station_id, arrival, departure, power_kw,
+                 energy_needed_kwh, energy_delivered_kwh, unmet_kwh, pct_met,
+                 energy_cost_eur, penalty_eur, avg_price_eur_per_kwh
         """
         # base info from sessions_df in the order of original indexing
         df = self.sessions_df.copy()
@@ -547,6 +736,7 @@ class EVChargingEnv:
             'station_id': df['station_id'].values,
             'arrival': pd.to_datetime(df['arrival']).values,
             'departure': pd.to_datetime(df['departure']).values,
+            'power_kw': df['power_kw'].astype(float).values,
             'energy_needed_kwh': df[need_col].astype(float).values,
             'energy_delivered_kwh': delivered,
             'energy_cost_eur': cost,
@@ -566,7 +756,7 @@ class EVChargingEnv:
     def __repr__(self) -> str:
         return (
             f"EVChargingEnv(stations={self.n_stations}, "
-            f"power={self.power_kw}kW, "
+            f"default_power={self.default_power_kw}kW, "
             f"interval={self.interval_minutes}min, "
             f"price_window={self.price_window}, "
             f"state_size={self.observation_size}, "
@@ -577,19 +767,35 @@ class EVChargingEnv:
 
         norm_state = state.copy()
 
-        base = 1 + self.price_window + 2  # next_price + price_window + sin, cos
-        station_feats_num = 4
+        # The (price_window+1) price slots are already normalized within
+        # their own window by _build_state() -- only window_min/window_max
+        # (raw €/kWh) still need scaling here.
+        pos_window_min = self.price_window + 1
+        pos_window_max = self.price_window + 2
+        norm_state[pos_window_min] = norm_state[pos_window_min] / self.norm_max_price
+        norm_state[pos_window_max] = norm_state[pos_window_max] / self.norm_max_price
+
+        base = (self.price_window + 1) + 2 + 2  # prices + window min/max + sin, cos
+        station_feats_num = 8  # should_charge_greedy (8th) is already 0/1, stays raw
         for i in range(self.n_stations):
-            pos_present = base + station_feats_num * i
             pos_remaining = base + station_feats_num * i + 1
             pos_till_dep = base + station_feats_num * i + 2
+            pos_power = base + station_feats_num * i + 4
+            pos_min_price_remaining = base + station_feats_num * i + 6
 
             remaining = norm_state[pos_remaining]
             t_until = norm_state[pos_till_dep]
+            power = norm_state[pos_power]
+            min_price_remaining = norm_state[pos_min_price_remaining]
 
-            # Normalize ONLY those two fields
+            # Normalize ONLY these fields (see class docstring / CLAUDE.md:
+            # presence/urgency/sin/cos/price_rank_remaining stay raw --
+            # price_rank_remaining is already a 0-1 min-max ratio, same as
+            # the window prices in _build_state())
             norm_state[pos_remaining] = remaining / self.norm_max_kwh
             norm_state[pos_till_dep] = t_until / self.norm_max_hours
+            norm_state[pos_power] = power / self.norm_max_power_kw
+            norm_state[pos_min_price_remaining] = min_price_remaining / self.norm_max_price
 
         return norm_state
 
@@ -604,8 +810,16 @@ class EVChargingEnv:
         sessions_df = sessions_df.copy()
         sessions_df["arrival"] = pd.to_datetime(sessions_df["arrival"])
         sessions_df["departure"] = pd.to_datetime(sessions_df["departure"])
+        # power_kw stays per-session; norm_max_power_kw is deliberately NOT
+        # recomputed here, same reasoning as norm_max_hours/norm_max_kwh
+        # below -- train and test must share one normalization scale.
+        sessions_df["power_kw"] = self._power_column(sessions_df)
         sessions_df = sessions_df.sort_values("arrival").reset_index(drop=True)
         self.sessions_df = sessions_df
+        # sessions_df just changed -- a cached _sessions_at() result from
+        # before this swap would silently answer with the OLD dataset's
+        # sessions if left in place, so it must be invalidated here.
+        self._sessions_at_cache = None
 
         # # --- Recompute normalization constants ---
         # self.norm_max_hours = (
@@ -639,6 +853,7 @@ class EVChargingEnv:
         # --- Recompute time boundaries ---
         self.t_min = self._floor_time(price_df["date"].min())
         self.t_max = price_df["date"].max()
+        self._build_price_grid()
 
         # --- Reset environment state completely ---
         return self.reset()

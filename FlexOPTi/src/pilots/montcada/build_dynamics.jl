@@ -257,9 +257,6 @@ function build_ξ1(digital_twin::Dict{String, Any},
     u = Float64[]
 
     for lag in lag_info["TempSP"][begin+1:end]
-        for (llk, llv) in lag_info
-            println(llk, " : ", llv);
-        end
         idx = sensor_datetime_idx - lag
         if idx < 1 || idx > length(sensors)
             error("build_ξ1: sensor index $idx (lag $lag) out of bounds for sensors of length $(length(sensors))")

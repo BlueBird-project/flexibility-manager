@@ -1,0 +1,26 @@
+{
+  "path_fast": ".",
+  "forges": [
+    "weather_vals",
+    "interpolate_15min",
+    "positive_pv"
+  ],
+  "translate": [
+    "chronos_2"
+  ],
+  "config_files": {
+    "forge": [
+      {
+        "location": "Namur, Belgium"
+      },
+      {},
+      {}
+    ],
+    "translate": [
+      {
+        "model_path": "amazon/chronos-2"
+      }
+    ]
+  },
+  "default_horizon_span": 96
+}

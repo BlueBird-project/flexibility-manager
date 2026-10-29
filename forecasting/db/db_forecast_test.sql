@@ -17,13 +17,20 @@ CREATE TABLE IF NOT EXISTS "forecasts" (
     "id" INTEGER PRIMARY KEY NOT NULL,
     "ds" TEXT,
     "asset_id" INTEGER,
-    "var_name" INTEGER,
+    "var_id" INTEGER,
     "yhat" FLOAT,
     "yhat_lower" FLOAT,
     "yhat_upper" INTEGER,
     "ds_forecast" TEXT,
     "model_name" TEXT,
     FOREIGN KEY("asset_id") REFERENCES "assets"("asset_id")
+    FOREIGN KEY("var_id") REFERENCES "forecast_var_names"("id")
+);
+
+CREATE TABLE IF NOT EXISTS "forecast_var_names" (
+    "id" INTEGER PRIMARY KEY NOT NULL,
+    "var_name" TEXT,
+    "type" TEXT
 );
 
 CREATE TABLE IF NOT EXISTS "energy_values" (
