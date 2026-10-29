@@ -1,0 +1,23 @@
+# Python 3.10.20
+# PriceFM+ (wheel hosted on Hugging Face) with TensorFlow for inference
+PriceFM_Plus[train] @ https://huggingface.co/datasets/RunyaoYu/European_Foundation_Model_DAM/resolve/main/pricefm_plus-0.1.0-py3-none-any.whl
+
+numpy>=1.24
+pandas>=2.0
+huggingface_hub>=0.30
+tqdm>=4.65
+requests
+dill
+
+# Orchestration / DB pipeline
+prefect>=3
+
+# API
+fastapi
+uvicorn
+pydantic>=2
+
+# Streamlit demo
+streamlit
+streamlit-option-menu
+plotly
