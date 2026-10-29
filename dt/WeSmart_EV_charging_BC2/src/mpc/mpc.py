@@ -97,6 +97,7 @@ def solve_horizon(
         now: datetime,
         site_max_power_kw: Optional[float] = None,
         pv_forecast: Optional[Mapping[datetime, float]] = None,
+        charging_efficiency: float = 1.0,
         time_limit_s: float = 10.0,
 ) -> dict:
     """Optimizer core (not MPC by itself -- see module docstring). Plans charging from `now` until
@@ -109,11 +110,19 @@ def solve_horizon(
                   each interval is paid for. None = no PV, and then the objective reduces to
                   exactly the EV-only one.
     site_max_power_kw: optional cap on the total power drawn across all EVs in any interval.
+    charging_efficiency: AC/DC conversion loss, as a fraction in (0, 1]. A real charger buys more
+                  from the grid than it delivers to the car -- buying `kwh / charging_efficiency`
+                  delivers `kwh`. Applied only to what is bought (grid or PV); the EV's own energy
+                  requirement is a delivered quantity and is unaffected. 1.0 (default) means no
+                  loss, and the objective reduces to exactly the lossless one.
 
     An EV that cannot be filled within its remaining window has its requirement capped at what
     is physically deliverable, so one impossible EV charges flat out instead of making the whole
     site's problem infeasible.
     """
+    if not 0 < charging_efficiency <= 1:
+        raise ValueError(f"charging_efficiency must be in (0, 1], got {charging_efficiency}")
+
     evs = [ev for ev in evs if ev.departure_time > now]
     if not evs:
         return {"status": "optimal", "profile": [], "cost": 0.0}
@@ -127,7 +136,11 @@ def solve_horizon(
           for iv in grid]
 
     E, T = range(len(evs)), range(len(grid))
+    # kwh: energy DELIVERED to the EV -- what the energy-requirement constraint cares about.
     kwh = {(e, t): evs[e].max_charging_power_kw * grid[t].duration_hours for e in E for t in T}
+    # input: energy BOUGHT (from grid or PV) to deliver that -- what gets paid for. Dividing by
+    # efficiency here, not multiplying kwh itself, keeps the EV's physical requirement untouched.
+    input_kwh = {k: v / charging_efficiency for k, v in kwh.items()}
     connected = {(e, t): int(evs[e].arrival_time <= grid[t].start_time
                              and grid[t].end_time <= evs[e].departure_time) for e in E for t in T}
 
@@ -138,13 +151,13 @@ def solve_horizon(
          for e in E for t in T}
 
     if pv_forecast:
-        # grid_t = max(0, drawn_t - pv_t): PV covers what it can, the rest is bought
+        # grid_t = max(0, bought_t - pv_t): PV covers what it can, the rest is bought
         g = {t: prob.add_variable(f"g_{t}", lowBound=0) for t in T}
         prob += pulp.lpSum(price[t] * g[t] for t in T)
         for t in T:
-            prob += g[t] >= pulp.lpSum(kwh[e, t] * x[e, t] for e in E) - pv[t]
+            prob += g[t] >= pulp.lpSum(input_kwh[e, t] * x[e, t] for e in E) - pv[t]
     else:
-        prob += pulp.lpSum(kwh[e, t] * price[t] * x[e, t] for e in E for t in T)
+        prob += pulp.lpSum(input_kwh[e, t] * price[t] * x[e, t] for e in E for t in T)
 
     for e in E:
         deliverable = sum(kwh[e, t] * connected[e, t] for t in T)
@@ -160,8 +173,8 @@ def solve_horizon(
         return {"status": status, "profile": [], "cost": None}
 
     plan = {k: round(v.value() or 0) for k, v in x.items()}
-    drawn = [sum(kwh[e, t] * plan[e, t] for e in E) for t in T]
-    cost = sum(price[t] * max(0.0, drawn[t] - pv[t]) for t in T)
+    bought = [sum(input_kwh[e, t] * plan[e, t] for e in E) for t in T]
+    cost = sum(price[t] * max(0.0, bought[t] - pv[t]) for t in T)
     return {
         "status": status,
         "profile": [
@@ -179,6 +192,7 @@ def mpc_decide(
         now: datetime,
         site_max_power_kw: Optional[float] = None,
         pv_forecast: Optional[Mapping[datetime, float]] = None,
+        charging_efficiency: float = 1.0,
         time_limit_s: float = 10.0,
 ) -> dict:
     """One receding-horizon MPC step. Re-solves the full look-ahead plan via `solve_horizon()` but
@@ -187,7 +201,8 @@ def mpc_decide(
     new EV arriving) with the then-current set of connected EVs; the rest of this call's plan is
     provisional and gets recomputed then, not carried over.
     """
-    result = solve_horizon(evs, prices, now, site_max_power_kw, pv_forecast, time_limit_s)
+    result = solve_horizon(evs, prices, now, site_max_power_kw, pv_forecast,
+                           charging_efficiency, time_limit_s)
     if not result["profile"]:
         return {"status": result["status"], "start": None, "end": None, "decisions": {}}
 

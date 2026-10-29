@@ -1,7 +1,5 @@
 # MPC inference service: solves a small MILP per request instead of running a trained network.
 #
-# Nothing is baked in — no model, no weights, no torch — so ONE image serves every setup and the
-# setup is chosen at run time:
 #   EV only                     docker run -d -p 8080:8080 -e ENGINE=mpc                  ev-mpc:v1
 #   EV + PV                     docker run -d -p 8081:8080 -e ENGINE=mpc -e MPC_HAS_PV=1  ev-mpc:v1
 #   EV + PV + building load     same as EV + PV; the caller sends solar MINUS building load
@@ -20,8 +18,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# MILP modelling + the HiGHS solver. No torch: the MPC path never imports it.
-RUN pip install --no-cache-dir "pulp>=4.0" "highspy>=1.7"
+# MILP modelling + the HiGHS solver, plus requests for fetching prices from the Trading Manager
+# when a request omits 'prices'. No torch: the MPC path never imports it.
+RUN pip install --no-cache-dir "pulp>=4.0" "highspy>=1.7" "requests>=2.31"
 
 # Only what the MPC service needs: the HTTP layer and the optimiser.
 COPY service/__init__.py service/errors.py service/inference_server.py service/mpc_engine.py ./service/

@@ -134,7 +134,10 @@ function find_index_from_datetime(list::AbstractVector, datetime::Union{String, 
 
     t_warn = 30*60
     if smallest_diff > t_warn 
-        @warn "The date used for optimization is more than $(t_warn/60) minutes off..."
+        @warn """
+        The date used for optimization is more than $(t_warn/60) minutes off...
+        Double check that inputed timestamps are matching.
+        """
     end
     
     return closest_index
