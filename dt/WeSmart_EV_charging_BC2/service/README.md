@@ -36,8 +36,28 @@ ENGINE=mpc MPC_HAS_PV=1 python -m service.inference_server
 ```
 
 Configuration (all optional): `MPC_HAS_PV`, `MPC_PRICE_QUARTERS` (96), `MPC_PV_QUARTERS` (96),
-`MPC_DEFAULT_POWER_KW` (9.0), `MPC_SITE_MAX_POWER_KW` (unset), `MPC_TIME_LIMIT_S` (10),
-plus `HOST` / `PORT`.
+`MPC_DEFAULT_POWER_KW` (9.0), `MPC_SITE_MAX_POWER_KW` (unset), `MPC_CHARGING_EFFICIENCY` (1.0),
+`MPC_TIME_LIMIT_S` (10), plus `HOST` / `PORT`.
+
+### Fetching prices from the Trading Manager
+
+By default a `/decide` request must carry its own `prices`. Set `PRICE_API_BASE` to a running
+Trading Manager's base URL and a request may omit `prices` entirely — the service fetches Belgian
+day-ahead prices itself:
+
+```
+docker run -d -p 8080:8080 --restart unless-stopped --name ev-mpc \
+  -e ENGINE=mpc -e PRICE_API_BASE=http://host.docker.internal:11001 -e PRICE_MARKET_ID=2 ev-mpc:v1
+```
+
+| Env var | Meaning |
+|---|---|
+| `PRICE_API_BASE` | Trading Manager base URL, e.g. `http://host.docker.internal:11001` when the TM stack runs on the host and this service runs in its own container. Unset (default): `prices` becomes required again. |
+| `PRICE_MARKET_ID` | Which TM market to read (default `2`). Market ids are assigned per TM instance, not fixed — check `GET {PRICE_API_BASE}/api/market` on your own deployment rather than assuming `2`. |
+
+A request that still sends `prices` explicitly always uses those, regardless of `PRICE_API_BASE` —
+useful for testing without a live TM. This needs the Trading Manager stack
+(`trading-manager-main`) running separately; it is not part of this repo.
 
 ## API
 
@@ -54,6 +74,7 @@ Returns the configuration, so a caller can self-check before wiring up the real 
   "pv_required": 96,
   "interval_minutes": 15,
   "site_max_power_kw": null,
+  "charging_efficiency": 1.0,
   "time_limit_s": 10.0
 }
 ```
@@ -77,6 +98,8 @@ One decision for one 15-minute interval.
   "pv_forecast": [0.0, 0.0, "... 96 values, only when has_pv ..."]
 }
 ```
+`prices` may be omitted if the container has `PRICE_API_BASE` set (see above) — the service then
+fetches them from the Trading Manager instead of requiring the caller to supply them.
 
 | Field | Meaning |
 |---|---|
@@ -85,7 +108,7 @@ One decision for one 15-minute interval.
 | `stations[].remaining_kwh` | Energy the EV still needs, from telemetry. |
 | `stations[].hours_to_departure` | Time until it leaves, as declared by the driver. |
 | `stations[].max_power_kw` | Optional per-station charging power; defaults to `power_kw` from `/health`. |
-| `prices` | €/kWh, consecutive **quarter-hour** values starting at `timestamp`, exactly `prices_required` of them. Belgian day-ahead prices are hourly — repeat each hourly value 4×. Beyond the supplied window the last price is held flat. |
+| `prices` | €/kWh, consecutive **quarter-hour** values starting at `timestamp`, exactly `prices_required` of them. Belgian day-ahead prices are hourly — repeat each hourly value 4×. Beyond the supplied window the last price is held flat. Optional if `PRICE_API_BASE` is set — the service fetches them itself. |
 | `pv_forecast` | kWh of solar available for EV charging per quarter-hour, same length and convention, required when `/health` reports `has_pv: true` and rejected otherwise. For the **building-load** setup send production **minus** consumption, floored at 0 — that is the only difference between EV+PV and EV+PV+load. Beyond the supplied window solar is assumed 0. |
 
 **Response:**
