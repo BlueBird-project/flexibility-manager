@@ -1,0 +1,25 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PRICEFM_WORKDIR=/data/pricefm \
+    ENTSOE_CREDENTIALS_FILE=/run/secrets/credentials_entsoe.json
+
+WORKDIR /app
+
+COPY requirements-docker.txt .
+RUN pip install -r requirements-docker-priceforecasting.txt
+
+COPY app_price_inference.py api_inference.py price_inference.py db_forecast.py fast_inference.py ./
+COPY forge ./forge
+COPY translate ./translate
+
+# Data and weights (several GB) are downloaded on model load; keep them in a volume.
+VOLUME /data/pricefm
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+    CMD python -c "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=4)"
+
+# One worker only: Forge/Translate change the working directory and the model lives in memory.
+CMD ["uvicorn", "app_price_inference:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
