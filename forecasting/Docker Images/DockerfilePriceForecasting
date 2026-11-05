@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY requirements-docker.txt .
+COPY requirements-docker-priceforecasting.txt .
 RUN pip install -r requirements-docker-priceforecasting.txt
 
 COPY app_price_inference.py api_inference.py price_inference.py db_forecast.py fast_inference.py ./
