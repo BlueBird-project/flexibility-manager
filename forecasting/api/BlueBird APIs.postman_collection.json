@@ -1,0 +1,211 @@
+{
+  "info": {
+    "_postman_id": "8fda2339-d2b4-41f9-ad30-81bacac588fb",
+    "name": "BlueBird APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "52935276",
+    "_collection_link": "https://go.postman.co/collection/52935276-8fda2339-d2b4-41f9-ad30-81bacac588fb?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Price Forecasting",
+      "item": [
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "accept",
+                "value": "*/*"
+              }
+            ],
+            "url": {
+              "raw": "http://127.0.0.1:8000/model/status",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "model",
+                "status"
+              ]
+            },
+            "description": "Generated from cURL: curl -X 'GET' \\\n  'http://127.0.0.1:8000/model/status' \\\n  -H 'accept: */*'"
+          },
+          "response": []
+        },
+        {
+          "name": "Forecast Production",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "accept",
+                "value": "*/*"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"days\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:8000/forecast/production",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "forecast",
+                "production"
+              ]
+            },
+            "description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/production' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"days\": 1\n}'"
+          },
+          "response": []
+        },
+        {
+          "name": "Backtest Forecast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "accept",
+                "value": "*/*"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"start_date\": \"20260501\",\n  \"end_date\": \"20260502\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:8000/forecast/backtest",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "forecast",
+                "backtest"
+              ]
+            },
+            "description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/backtest' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"start_date\": \"20260501\",\n  \"end_date\": \"20260502\"\n}'"
+          },
+          "response": []
+        },
+        {
+          "name": "Load Model",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "accept",
+                "value": "*/*"
+              }
+            ],
+            "url": {
+              "raw": "http://127.0.0.1:8000/model/load?force=false",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "model",
+                "load"
+              ],
+              "query": [
+                {
+                  "key": "force",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/model/load?force=false' \\\n  -H 'accept: */*' \\\n  -d ''"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Asset Forecasting",
+      "item": [
+        {
+          "name": "Forecast Asset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "accept",
+                "value": "*/*"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"horizon_span\": 4,\n        \"data\": {\n            \"ds\": [\n                \"2026-10-20 00:00:00\",\n                \"2026-10-20 00:15:00\",\n                \"2026-10-20 00:30:00\",\n                \"2026-10-20 00:45:00\"\n            ],\n            \"unique_id\": [\"asset_1\", \"asset_1\", \"asset_1\", \"asset_1\"],\n            \"y\": [100.0, 101.5, 99.8, 102.1]\n        }}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://127.0.0.1:8000/forecast/day-ahead",
+              "protocol": "http",
+              "host": [
+                "127",
+                "0",
+                "0",
+                "1"
+              ],
+              "port": "8000",
+              "path": [
+                "forecast",
+                "day-ahead"
+              ]
+            },
+            "description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/day-ahead' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"horizon_span\": 4,\n        \"data\": {\n            \"ds\": [\n                \"2026-10-20 00:00:00\",\n                \"2026-10-20 00:15:00\",\n                \"2026-10-20 00:30:00\",\n                \"2026-10-20 00:45:00\"\n            ],\n            \"unique_id\": [\"asset_1\", \"asset_1\", \"asset_1\", \"asset_1\"],\n            \"y\": [100.0, 101.5, 99.8, 102.1]\n        }}'"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
