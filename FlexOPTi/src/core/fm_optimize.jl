@@ -133,8 +133,19 @@ function optimize(digital_twin_file,
         end
     end
 
-	@info "Set logger to level $(o.loglevel)"
+	# FlexOPTi's logger for this call; the caller's global logger is restored afterwards
+	caller_logger = global_logger()
 	set_logging(o)
+	try
+		return _optimize(o, constraint_kwargs, process_start_datetime,
+		                 digital_twin_file, sensors_file, forecasts_file)
+	finally
+		global_logger(caller_logger)
+	end
+end
+
+function _optimize(o::O, constraint_kwargs, process_start_datetime,
+                   digital_twin_file, sensors_file, forecasts_file)
 
 	# Dispatch to the right pilot
 	if o.pilot === nothing
@@ -157,7 +168,8 @@ function optimize(digital_twin_file,
 	isempty(constraint_kwargs) || @info "Constraint overrides: $(join(["$k = $v" for (k, v) in constraint_kwargs], ", "))"
 	constraints = build_constraints(o.pilot; constraint_kwargs...)
 
-	@info "Starting one step optimization"
+	@info "Starting one step optimization: compute_datetime=$(o.compute_datetime), Hu=$(o.Hu), Δt=$(o.Δt) s, " *
+	      "soft_temperature=$(o.soft_temperature), use_pv=$(o.use_pv), mip_gap=$(o.mip_gap), time_limit=$(o.time_limit) s"
 
 	# TODO : With the API cach the lattest dynamics in a module digital twin and if the API gives nothing use the lattest catch data
 	@info "Reading the digital twin from $digital_twin_file."
@@ -185,7 +197,8 @@ function optimize(digital_twin_file,
 	opt_time = @elapsed begin
 		oy = mpc_update(o.pilot, o, ox) # One step prediction
 	end
-	@info "Optimization terminated with status $(oy[:OPT_status]) in $(@sprintf("%.2g",opt_time)) seconds."
+	@info "Optimization terminated with status $(oy[:OPT_status]) in $(@sprintf("%.2f", opt_time)) s " *
+	      "(cost = $(oy[:OPT_cost]), gap = $(@sprintf("%.2f", 100*get(oy, :OPT_gap, NaN))) %)."
 	oy[:prices_quality] = prices_quality
 
 	process_end_datetime = Dates.now()

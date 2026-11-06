@@ -250,6 +250,7 @@ function parse_digital_twin(::Montcada, o::O, json_path::String)::Dict{String, A
     Δt = (last_end - last_start)
     Δt = Millisecond(Δt) / Millisecond(Hour(1))
     parsed_data["DeltaTimeInHours"] = Δt
+    Δt_o = o.Δt
     o.Δt = Δt * 3600 # MPC step [s] = DT step, so that the market prices are aligned on it
     parsed_data["NumberRooms"] = length(parsed_data["CoefsTempCoolingRowNames"])
 
@@ -257,8 +258,8 @@ function parse_digital_twin(::Montcada, o::O, json_path::String)::Dict{String, A
     collected_lags = collect_lags(parsed_data["CoefsTempHeatingColNames"])
     parsed_data["CollectedLags"] = collected_lags
 
-    @info "Next time step interval : [$last_start - $last_end];"
-    @info "Using Δt = $(Δt) h."
+    @info "Next time step interval: [$last_start - $last_end]. MPC step = DT step = $(Δt) h" *
+          (Δt_o == o.Δt ? "." : " (Δt = $(Δt_o) s overridden).")
 
     return parsed_data
 

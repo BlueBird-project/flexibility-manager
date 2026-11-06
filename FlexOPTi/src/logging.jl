@@ -50,21 +50,16 @@ function set_logging(o::O)
         error("Invalid log_level: '$log_level'. Expected one of: $(join(keys(level_map), ", ")).")
     end
 
-    # Construct destination loggers
-    file_logger     = FileLogger(log_file)
-    console_logger  = ConsoleLogger(stderr)
-    combined_logger = TeeLogger(console_logger, file_logger)
-
-    # Map output mode
-    logger_map = Dict(
-        "file"     => file_logger,
-        "console"  => console_logger,
-        "combined" => combined_logger,
-    )
-
-    # Resolve selected logger
+    # Construct the destination logger. The log file is only opened when it is
+    # used, and appended to, so that it keeps the previous runs.
     out_key = lowercase(log_output)
-    selected_logger = get(logger_map, out_key) do
+    selected_logger = if out_key == "console"
+        ConsoleLogger(stderr)
+    elseif out_key == "file"
+        FileLogger(log_file; append = true)
+    elseif out_key == "combined"
+        TeeLogger(ConsoleLogger(stderr), FileLogger(log_file; append = true))
+    else
         error("Invalid log_output: '$log_output'. Expected 'console', 'file', or 'combined'.")
     end
 

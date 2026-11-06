@@ -9,6 +9,15 @@ function build_dynamics(::Montcada, o::O,
                         digital_twin::Dict{String, Any},
                         sensors::Vector{Dict{String, Any}},
                         forecasts::Dict{String, Any})
+    rows = forecasts["TransformedInputsTemperature"]
+    n_available = length(rows) - forecasts["StartIndex"] + 1
+    n_available ≥ o.Hu || error("The forecasts cover $n_available steps from compute_datetime " *
+                                "(last row $(rows[end]["start"])), Hu = $(o.Hu) requested.")
+    row = digital_twin["TransformedInputsTemperature"][digital_twin["StartIndex"]]
+    missing_cols = [c for c in digital_twin["CoefsTempCoolingColNames"] if !startswith(c, "TempSP") && !haskey(row, c)]
+    isempty(missing_cols) || error("The DT row $(row["start"]) has no column $(first(missing_cols)) " *
+                                   "($(length(missing_cols) - 1) more missing): the first rows of the data have " *
+                                   "no lag columns, compute_datetime may be too early.")
     dynamics = Dict{String, Any}("room" => build_batch(o, digital_twin, sensors, forecasts; op_mode="room"))
     for mode in ["heat", "cool"]
         dynamics["power_$mode"] = build_power_batch(o, digital_twin, forecasts; op_mode=mode)
@@ -440,7 +449,7 @@ function build_d_inputs(
     elseif lowercase(op_mode) == "cool" || op_mode == "room" # Same columns in both modes
         col_names = forecast_json["CoefsTempCoolingColNames"]
     else
-        @error "Unvalid op mode $mode... Choose between 'heat' or 'cool'"
+        throw(ArgumentError("Invalid op mode $(op_mode). Choose between 'heat', 'cool' or 'room'."))
     end
 
     datetime_index = forecast_json["StartIndex"]
@@ -454,7 +463,8 @@ function build_d_inputs(
         if haskey(forecast_dict, name)
             forecast_vector[mapped_pos] = forecast_dict[name]
         else
-            error("Missing key '$name' in forecast keys")
+            error("Missing key '$name' in the forecast row $(forecast_dict["start"]) (MPC step $k). " *
+                  "The first rows of the data have no lag columns: compute_datetime may be too early.")
         end
     end
     
@@ -506,7 +516,7 @@ function extract_data_dynamics(digital_twin::Dict{String, Any},
         colInfoE = digital_twin["CoefsHVACEnergyCoolingColInfo"]
         row_name = digital_twin["CoefsTempCoolingRowNames"     ]
     else
-        @error "Undefined mode $(op_mode)."
+        throw(ArgumentError("Undefined mode $(op_mode). Choose between 'heat', 'cool' or 'room'."))
     end     
 
     return M, colInfoT, colInfoE, row_name

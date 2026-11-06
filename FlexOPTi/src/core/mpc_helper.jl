@@ -21,9 +21,9 @@ function initialize_model(o::O)
             MOI.Silent()               => silent,
             MOI.RelativeGapTolerance() => o.mip_gap,
         ))
-        @info "Using solver $(o.solver)."
-    catch
-        @warn "Solver '$(o.solver)' not found or failed to load. Defaulting to HiGHS."
+        @info "Using solver $(o.solver) (mip_gap = $(o.mip_gap), time_limit = $(o.time_limit) s)."
+    catch e
+        @warn "Solver '$(o.solver)' not found or failed to load ($(sprint(showerror, e))). Defaulting to HiGHS."
         model = Model(optimizer_with_attributes(
             HiGHS.Optimizer,
             MOI.Silent()               => silent,

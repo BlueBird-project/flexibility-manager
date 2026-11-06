@@ -41,7 +41,7 @@ function mpc_state_dynamics(digital_twin::Dict{String, Any}, mpc_step::Int, comp
         colInfoE = digital_twin["CoefsHVACEnergyCoolingColInfo"]
         row_name = digital_twin["CoefsTempCoolingRowNames"     ]
     else
-        @error "Undefined mode $(mode)."
+        throw(ArgumentError("Undefined mode $(mode). Choose between 'heat' or 'cool'."))
     end
 
 
@@ -131,7 +131,7 @@ function mpc_power_dynamics(digital_twin::Dict{String, Any}, mpc_step::Int, comp
         colInfoE = digital_twin["CoefsHVACEnergyCoolingColInfo"]
         power_linear_map = digital_twin["CoefsHVACEnergyCooling"]
     else
-        @error "Undefined mode $(mode)."
+        throw(ArgumentError("Undefined mode $(mode). Choose between 'heat' or 'cool'."))
     end
 
     # Keep track of the order 

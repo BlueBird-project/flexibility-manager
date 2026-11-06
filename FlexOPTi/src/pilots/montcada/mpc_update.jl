@@ -81,6 +81,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     Nr = digital_twin["NumberRooms"     ]   
 
     threshold = fld(Nr,2) + 1 # Majority threshold
+    o.warm_start && @warn "warm_start is not supported by the Montcada pilot and is ignored."
     # Use compute_datetime from options if provided, otherwise use current time
     if o.compute_datetime !== nothing
         mpc_start_time = o.compute_datetime
@@ -110,6 +111,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     hvac_status, h = mpc_HVAC_info(digital_twin)
     hvac_status = repeat(hvac_status', Hu)
     power_mode = Int.(sum(h) > threshold) |> x -> fill(x, Hu)
+    @info "Energy model: $(power_mode[1] == 1 ? "heating" : "cooling") ($(round(Int, sum(h))) of $Nr rooms in heating mode)."
     h = repeat(h', Hu)
 
     model = initialize_model(o)
@@ -130,16 +132,16 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # so a single symmetric variable covers either direction. It must stay
         # per-room: a shared slack would be paid for once and then widen the band
         # for every room at every step for free.
-        @info "Temperature constraints: SOFT — band [$(round(T_low, digits=2)), " *
-              "$(round(T_high, digits=2))] K penalised at $(o.slack_penalty) W/K × peak price."
+        @info "Temperature constraints: SOFT — band [$(round(T_low - KELVIN_OFFSET, digits=2)), " *
+              "$(round(T_high - KELVIN_OFFSET, digits=2))] °C penalised at $(o.slack_penalty) W/K × peak price."
         T_min, T_max = KELVIN_OFFSET + 0.0, KELVIN_OFFSET + 50.0 # Physical range [K], keeps the big-M below finite
         @variable(model, T_min ≤     T[k=1:Nr*Hu] ≤ T_max         ) # Room temperature
         @variable(model, 0      ≤    s[k=1:Nr*Hu]                 ) # Comfort violation [K]
         @constraint(model, T .≥ T_low  .- s)
         @constraint(model, T .≤ T_high .+ s)
     else
-        @info "Temperature constraints: HARD — band [$(round(T_low, digits=2)), " *
-              "$(round(T_high, digits=2))] K enforced; the solve fails if it cannot be met."
+        @info "Temperature constraints: HARD — band [$(round(T_low - KELVIN_OFFSET, digits=2)), " *
+              "$(round(T_high - KELVIN_OFFSET, digits=2))] °C enforced; the solve fails if it cannot be met."
         T_min, T_max = T_low, T_high
         @variable(model, T_low ≤     T[k=1:Nr*Hu] ≤ T_high       ) # Room temperature
     end
@@ -347,6 +349,12 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     has_solution = (termination_status(model) == MOI.OPTIMAL || 
                     termination_status(model) == MOI.LOCALLY_SOLVED ||
                     primal_status(model) == MOI.FEASIBLE_POINT)
+    gap = try relative_gap(model) catch; NaN end
+
+    if has_solution && status == MOI.TIME_LIMIT
+        @warn "Time limit of $(o.time_limit) s reached: returning the best solution found " *
+              "(gap $(round(100*gap, digits=2)) %)."
+    end
 
     if has_solution
         # Comfort violations — zeros when the band is enforced as a hard constraint
@@ -356,10 +364,21 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             # Which room and step took the worst hit — the operator needs both.
             worst_step, worst_room = Tuple(argmax(T_slack))
             n_violating = count(>(EPSILON), T_slack)
+            room_names, _ = reorder_labels(digital_twin["CoefsTempCoolingRowNames"], collect(1:Nr)) # MPC room order
+            room_name  = replace(room_names[worst_room], "AmbTemp_" => "room ")
+            t_worst    = digital_twin["LastStartDateTime"] + Millisecond(round(Int, (worst_step - 1) * Δt * 3600e3))
+            side       = value(T[(worst_step - 1)*Nr + worst_room]) < T_low ? "below" : "above"
             @warn "Comfort band violated by up to $(round(max_violation, digits=3)) K " *
-                  "(room $worst_room, step $worst_step); $n_violating of $(Hu*Nr) room-steps outside the band."
+                  "($room_name $side the band at $t_worst); $n_violating of $(Hu*Nr) room-steps outside the band."
         elseif o.soft_temperature
             @info "Comfort band held at every room and step; no slack used."
+        end
+
+        # TEMPORARY: p_grid ≥ 0 is disabled (see the p_grid variable), make it visible when used
+        p_grid_min = minimum(value.(p_grid))
+        if p_grid_min < -EPSILON
+            @warn "p_grid < 0 at $(count(<(-EPSILON), value.(p_grid))) of $Hu steps (min $(round(p_grid_min/1e3, digits=2)) kW): " *
+                  "negative HVAC energy from the DT, or PV exported (p_grid ≥ 0 is temporarily disabled)."
         end
 
         # TODO : Rename the symbols as string and use a convention
@@ -380,14 +399,20 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
             :Tbc            => value.(Tbc),
             :T_slack        => T_slack,
             :OPT_status     => status,
+            :OPT_gap        => gap,
             :o              => o, 
             :ox             => ox
         );
     else
        @warn "Solver failed: $status. Returning NaN/Empty dict."
-       if status == MOI.INFEASIBLE && !o.soft_temperature
+       infeasible = status in (MOI.INFEASIBLE, MOI.INFEASIBLE_OR_UNBOUNDED)
+       if infeasible && !o.soft_temperature
            @warn "Temperature constraints are HARD — an unreachable comfort band is a likely cause. " *
                  "Set soft_temperature = true to penalise violations instead and keep a usable solution."
+       elseif infeasible
+           @warn "Infeasible although the comfort band is soft: another constraint is the cause — the physical " *
+                 "0–50 °C bound on the room temperatures, the power bounds or the setpoint activation. " *
+                 "Check the DT predictions for non-physical temperatures or negative energy."
        end
       
        oy = Dict(
@@ -407,13 +432,18 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
            :Tbc            => fill(NaN, Hu),
            :T_slack        => fill(NaN, Hu, Nr),
            :OPT_status     => status,
+           :OPT_gap        => NaN,
            :o              => o, 
            :ox             => ox
        )
     end
 
     # Debug
-    JuMP.write_to_file(model, joinpath(pkgdir(@__MODULE__), "data", "model_dump.lp"))
+    if lowercase(o.loglevel) == "debug"
+        lp_file = joinpath(pkgdir(@__MODULE__), "data", "model_dump.lp")
+        JuMP.write_to_file(model, lp_file)
+        @debug "Model written to $lp_file"
+    end
     opt_output_to_file(joinpath(@__DIR__, "../../..", "data", o.output_file), oy; kelvin = false)
 
     return oy 

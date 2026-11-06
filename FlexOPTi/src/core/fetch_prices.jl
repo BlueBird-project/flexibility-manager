@@ -210,7 +210,7 @@ function fetch_market_prices(o::O)::Tuple{Vector{Float64}, Symbol}
     # No price specified. Using dummy
     if o.market_country === nothing
         dummy_price = 1.0
-        @info """No Market was selected (nothing). Using a dummy price of $(dummy_price) EUR/kWh. 
+        @info """No Market was selected (nothing). Using a dummy price of $(dummy_price) EUR/Wh. 
               To use a market, try calling `optimize(...; market_country={country},...)`.
               For example:
                 julia> FlexOPTi.optimize(dt, sensors, forecasts; market_country=\"Germany\", kwargs...)"""
@@ -231,8 +231,8 @@ function fetch_market_prices(o::O)::Tuple{Vector{Float64}, Symbol}
 
     prices_vec = _align_prices(prices_dict, t0, o.Hu, Δt_sec)
     @info "Price vector aligned: Hu=$(o.Hu) steps, " *
-          "min=$(round(minimum(prices_vec), digits=4)) " *
-          "max=$(round(maximum(prices_vec), digits=4)) EUR/kWh " *
+          "min=$(round(1000*minimum(prices_vec), digits=4)) " *
+          "max=$(round(1000*maximum(prices_vec), digits=4)) EUR/kWh " *
           "(quality: $quality)"
     return prices_vec, quality
 end
@@ -261,14 +261,15 @@ function _get_prices_dict(o::O)::Tuple{Dict{DateTime, Float64}, Symbol}
             @info "Market prices fetched live from Trading Manager (market_id=$market_id, $(length(prices_dict)) slots)"
             return prices_dict, :live
         end
+        @warn "Trading Manager returned no prices for market_id=$market_id — trying file cache"
     catch e
-        @warn "Trading Manager unreachable: $e — trying file cache"
+        @warn "Price query to the Trading Manager failed: $(first(sprint(showerror, e), 300)) — trying file cache"
     end
 
     # 2. Fall back to file cache
     cached = _load_cache(country)
     if !isnothing(cached) && !isempty(cached)
-        @warn "Using cached market prices (TM unavailable) — $(length(cached)) slots"
+        @warn "Using cached market prices (no live prices) — $(length(cached)) slots"
         return cached, :cached
     end
 

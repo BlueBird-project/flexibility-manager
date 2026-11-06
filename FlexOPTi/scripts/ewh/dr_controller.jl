@@ -221,6 +221,7 @@ function dt_collect() :: Bool
         @info "[DT] Retrain finished — model updated ($(DT_FILE))."
         return true
     end
+    @error "[DT] Retrain finished but no model file at $out — keeping the previous model."
     return false
 end
 
@@ -290,7 +291,6 @@ function mpc_loop(db::SQLite.DB)
                 "u"       => u_first,
                 "updated" => string(t_solve),
             )
-            @info @sprintf("[MPC] cost=%.4f  status=%s", oy[:OPT_cost], oy[:OPT_status])
 
         catch e
             @error "[MPC] Step failed" exception=(e, catch_backtrace())
@@ -301,6 +301,7 @@ function mpc_loop(db::SQLite.DB)
 
         # ── Sleep until next control timestep ────────────────────────────────
         elapsed = time() - t_wall
+        elapsed > Δt_s && @warn "[MPC] Step took $(round(elapsed, digits=1)) s, longer than Δt = $(Δt_s) s — the loop is running late."
         sleep(max(0.0, Δt_s - elapsed))
     end
 end

@@ -132,12 +132,13 @@ function find_index_from_datetime(list::AbstractVector, datetime::Union{String, 
         end
     end
 
-    t_warn = 30*60
-    if smallest_diff > t_warn 
-        @warn """
-        The date used for optimization is more than $(t_warn/60) minutes off...
-        Double check that inputed timestamps are matching.
-        """
+    # Inside the data the closest row is at most half a step away; more means
+    # the requested time is outside the data range
+    t_warn = length(list) ≥ 2 ? abs((ZonedDateTime(list[2]["start"]) - ZonedDateTime(list[1]["start"])) / Second(1)) / 2 : 30*60
+    if smallest_diff > t_warn
+        @warn "Requested time $datetime is $(round(smallest_diff/60, digits=1)) min from the closest row " *
+              "($(list[closest_index]["start"])); the data covers $(list[1]["start"]) to $(list[end]["start"]). " *
+              "Double check that the input timestamps match."
     end
     
     return closest_index
