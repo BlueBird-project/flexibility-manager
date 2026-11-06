@@ -8,7 +8,7 @@ Run every command from the root of this folder.
 
 ```
 .
-├── docker-compose.yml
+├── docker-compose-flow.yml
 ├── DockerfileFlow
 ├── requirements-flow.txt
 ├── .env                       # you create it (step 3)
