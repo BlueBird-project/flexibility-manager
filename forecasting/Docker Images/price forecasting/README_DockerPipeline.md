@@ -77,7 +77,8 @@ Behind a corporate proxy: put the CA bundle in the root as `ca.pem` and uncommen
 ## 4. Start
 
 ```
-docker compose up -d --build
+docker compose -f docker-compose-flow.yml build --no-cache flow
+docker compose -f docker-compose-flow.yml up -d
 ```
 
 This builds the flow image and starts two containers:
@@ -88,8 +89,8 @@ This builds the flow image and starts two containers:
 Check that both are running:
 
 ```
-docker compose ps
-docker compose logs -f flow
+docker compose -f docker-compose-flow.yml ps
+docker compose -f docker-compose-flow.yml logs -f flow
 ```
 
 ## 5. Run a forecast now (first run)
@@ -97,7 +98,7 @@ docker compose logs -f flow
 The schedule only runs at the configured time. To fill the database right away:
 
 ```
-docker compose exec flow python prefect_price_flow_psq.py --once
+docker compose -f docker-compose-flow.yml exec flow python prefect_price_flow_psq.py --once
 ```
 
 Useful options:

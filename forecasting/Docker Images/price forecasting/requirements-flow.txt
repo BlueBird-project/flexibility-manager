@@ -8,4 +8,6 @@ requests
 dill
 
 prefect>=3
+# Prefect's server still uses Body(min_items=...), removed in newer FastAPI
+fastapi<0.119
 psycopg[binary]
