@@ -1,0 +1,22 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PRICEFM_WORKDIR=/data/pricefm \
+    ENTSOE_CREDENTIALS_FILE=/run/secrets/credentials_entsoe.json
+
+WORKDIR /app
+
+COPY requirements-flow.txt .
+RUN pip install -r requirements-flow.txt
+
+COPY prefect_price_flow_psq.py price_inference_psq.py price_inference.py db_forecast_psq.py db_forecast.py \
+     db_forecast_pg.sql fast_inference.py ./
+COPY forge ./forge
+COPY translate ./translate
+
+# Data and weights (several GB) are downloaded on the first run; keep them in a volume.
+VOLUME /data/pricefm
+
+# Serves the daily schedule (FLOW_CRON, FLOW_TIMEZONE). Use `--once` to run immediately.
+CMD ["python", "prefect_price_flow_psq.py"]

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pricefm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-pricefm}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      # Only reachable from this machine; 5433 avoids the Postgres already installed on 5432.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  flow:
+    build:
+      context: .
+      dockerfile: DockerfileFlow
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FORECAST_DB_URL: postgresql://${POSTGRES_USER:-pricefm}@postgres:5432/${POSTGRES_DB:-pricefm}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      FLOW_CRON: ${FLOW_CRON:-0 13 * * *}
+      FLOW_TIMEZONE: ${FLOW_TIMEZONE:-UTC}
+      PRICE_BACKFILL_DAYS: ${PRICE_BACKFILL_DAYS:-3}
+      # Corporate proxy: uncomment and mount the CA bundle below.
+      # SSL_CERT_FILE: /certs/ca.pem
+      # REQUESTS_CA_BUNDLE: /certs/ca.pem
+    volumes:
+      - pricefm_data:/data/pricefm
+      - ./credentials_entsoe.json:/run/secrets/credentials_entsoe.json:ro
+      # - ./ca.pem:/certs/ca.pem:ro
+
+volumes:
+  pg_data:
+  pricefm_data:
