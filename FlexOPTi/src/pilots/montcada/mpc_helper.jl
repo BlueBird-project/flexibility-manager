@@ -346,7 +346,24 @@ function mpc_HVAC_info(digital_twin::Dict{String, Any}, backward=0::Int)
     status = get.(Ref(hvac_dict), "PW_"     .* string.(extract_index.(room_order)), missing)
     mode   = get.(Ref(hvac_dict), "OpMode_" .* string.(extract_index.(room_order)), missing)
 
-    return Bool.(status), Int.(mode .≤ 2) 
+    return Float64.(status), Int.(mode .≤ 2) # status ∈ [0,1]: fraction of the step the HVAC was ON
+end
+
+
+"""
+    forecast_series(forecast_json, key, field, start_time, Hu) -> Vector{Float64}
+
+Read `Hu` consecutive values of `field` in the list `forecast_json[key]` (entries with
+"start" / "end"), starting from the entry matching `start_time`.
+e.g. forecast_series(forecast_json, "NonHVACEnergyPredicted", "NonHVACEnergy", start_time, Hu)
+"""
+function forecast_series(forecast_json::Dict{String, Any}, key::String, field::String,
+                         start_time::Union{String, ZonedDateTime}, Hu::Int)::Vector{Float64}
+    haskey(forecast_json, key) || error("Missing '$key' in the forecasts (needed with use_pv = true).")
+    list = forecast_json[key]
+    idx  = find_index_from_datetime(list, start_time)
+    idx + Hu - 1 ≤ length(list) || error("'$key' has $(length(list) - idx + 1) steps from $start_time, Hu = $Hu needed.")
+    return [Float64(list[idx + k - 1][field]) for k in 1:Hu]
 end
 
 
@@ -362,10 +379,10 @@ function transform_setpoint(SP, SP_part, input_dict, digital_twin)
     idx = parse(Int, SP_part[2])
     if length(SP_part) ≥ 3
         lag = parse(Int, lstrip(SP_part[3],'l'))
-        key = "AmbTemp_$(idx)_l$lag"
+        key = "AmbTemp_$(idx)_l$(lag+1)" # Temperature at the step before the setpoint (DT definition)
         idx_op = idx_op - lag 
     else
-        key = "AmbTemp_$idx"
+        key = "AmbTemp_$(idx)_l1"
     end
 
     T = input_dict[key]

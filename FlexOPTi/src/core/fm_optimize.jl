@@ -54,10 +54,28 @@ All keyword arguments override fields of the default options object `O`
   comfort band cannot be met. Default: `false` (hard bounds).
 
 - `slack_penalty::Float64`
-  Cost per K⋅step of temperature violation. Default `1e9`, which is far above
-  the energy term, so the comfort band is only left when the problem would
+  Penalty of temperature violation in W/K: 1 K of violation in one room during
+  one step costs like `slack_penalty` W bought at the horizon's highest price
+  (`slack_penalty × max|price| × Δt` per K⋅step). Default `1e6`, which is far
+  above the energy term, so the comfort band is only left when the problem would
   otherwise be infeasible. Lower it to let the optimizer trade comfort for
   money deliberately.
+
+## PV
+- `use_pv::Bool`
+  If `true`, the grid power is `p_grid = p_HVAC + p_rest - PVused`, with the PV
+  production and the rest of the building consumption read from the forecast
+  file (Montcada: `PVEnergyPredicted` and `NonHVACEnergyPredicted`). If `false`,
+  `p_grid = p_HVAC`. Default: `false`.
+
+## Solver
+- `mip_gap::Float64`
+  Relative MIP gap at which the solver stops (e.g. `0.02` = 2%). Default: `1e-4`.
+
+- `time_limit::Float64`
+  Solver time limit in seconds. When it is reached, the best solution found so
+  far is returned (`OPT_status = TIME_LIMIT`); if none was found, the outputs
+  are NaN. Default: `Inf` (no limit).
 
 ## Asset Constraints
 Any keyword that is not a field of `O` is forwarded to the pilot's
@@ -224,14 +242,22 @@ function default_code_parameter()
 
 	# Comfort constraint softening
 	soft_temperature = false # hard temperature bounds by default
-	# Cost per K⋅step of comfort violation. This is an exact-penalty formulation:
-	# above the largest shadow price of the temperature bounds the solution matches
-	# the hard-constrained one, so the band is only left when it has to be. Scale
-	# reference — the Montcada energy term reaches ~2e7 over a 96-step horizon
-	# (power in watts × ToU ≈ 10), so 1e9 sits ~50× above a full horizon while
-	# staying far below the ~1e15 where the cost term would vanish into rounding.
-	# NOTE: units-dependent; rescale if the power model ever moves to kW.
-	slack_penalty    = 1e9
+	# Comfort violation penalty [W/K]: 1 K of violation in one room during one
+	# step costs like slack_penalty W bought at the horizon's highest price, i.e.
+	# λ = slack_penalty × max|price| × Δt per K⋅step (independent of the price
+	# level and of Δt). This is an exact-penalty formulation: above the largest
+	# shadow price of the temperature bounds the solution matches the
+	# hard-constrained one, so the band is only left when it has to be. Scale
+	# reference — on the Montcada test data the violation stops shrinking at
+	# ~2e4 W/K, so 1e6 W/K (= 100 EUR per K⋅h at 0.1 EUR/kWh) keeps a ~50× margin
+	# while leaving the energy cost visible to the relative MIP gap.
+	slack_penalty    = 1e6
+
+	# PV
+	use_pv = false # PV and rest of the building consumption not in the objective by default
+
+	# Solver
+	time_limit = Inf # solver time limit [s], no limit by default
 
 	return O(Hu, Δt, init_condition, pilot,
 		loglevel, logoutput, logfile, log_with_time, solver,
@@ -239,7 +265,9 @@ function default_code_parameter()
 		continuous_dynamo,
 		output_file, compute_datetime,
 		market_country, variable_Hu, tm_base_url,
-		soft_temperature, slack_penalty)
+		soft_temperature, slack_penalty,
+		use_pv,
+		time_limit)
 end
 
 function add_date_time_metadata!(pilot, oy::Dict{Symbol, Any},

@@ -1,14 +1,19 @@
 """
-    build_dynamics(::Montcada, o, digital_twin, sensors, forecasts) -> Dict{String,BatchDynamics}
+    build_dynamics(::Montcada, o, digital_twin, sensors, forecasts) -> Dict{String,Any}
 
-Build batch dynamics for both HVAC operating modes.
+Build batch dynamics with each room in its own HVAC operating mode ("room").
+(build_batch(...; op_mode="heat"/"cool") gives the batch with all rooms in one mode.)
+Build the batch HVAC power model for both modes ("power_heat", "power_cool").
 """
 function build_dynamics(::Montcada, o::O,
                         digital_twin::Dict{String, Any},
                         sensors::Vector{Dict{String, Any}},
                         forecasts::Dict{String, Any})
-    Dict(mode => build_batch(o, digital_twin, sensors, forecasts; op_mode=mode)
-         for mode in ["heat", "cool"])
+    dynamics = Dict{String, Any}("room" => build_batch(o, digital_twin, sensors, forecasts; op_mode="room"))
+    for mode in ["heat", "cool"]
+        dynamics["power_$mode"] = build_power_batch(o, digital_twin, forecasts; op_mode=mode)
+    end
+    return dynamics
 end
 
 
@@ -119,6 +124,60 @@ end
 
 function batch_G(A::Matrix, G::Matrix, C::Matrix, Hu::Int)
     return batch_B(A, G, C, Hu)
+end
+
+
+"""
+    Batch HVAC energy model (DT Stage 2) over the horizon Hu, for one operating mode
+
+    E   = e0 + ΓT ⋅ T + βh ⋅ Tbh + βc ⋅ Tbc   energy per step [Wh]
+    Tbh = Wbh ⋅ bh + tbh0                     heating balance temperature [K]
+    Tbc = Wbc ⋅ bc + tbc0                     cooling balance temperature [K]
+
+    T      := [xk+1, xk+2, ...., xk+Hu]  stacked room temperatures (decision variable, as in build_batch)
+    bh, bc := 1 if at least one heating / cooling room has an active setpoint (decision variable)
+
+    E_k   = β0 + βn⋅nhvac_k + βh⋅Tbh_k + βc⋅Tbc_k + Σ_r β_r⋅Φ_r⋅ΔT_r,k
+    ΔT_k  = T_k - T_k-1 (heating), T_k-1 - T_k (cooling), 0 for the rooms in the other mode
+    Tbh_k = bh_k⋅max(0, Trefh - Tout_k), Tbc_k = bc_k⋅max(0, Tout_k - Trefc)   (k = 1 : from the data)
+"""
+function build_power_batch(o::O,
+                           digital_twin::Dict{String, Any},
+                           forecast_json::Dict{String, Any};
+                           op_mode::String)
+
+    datetime = o.compute_datetime
+    Hu       = o.Hu
+    sgn      = op_mode == "heat" ? 1.0 : -1.0
+
+    # HVAC status Φ_r. Rooms not in the mode of the model don't consume.
+    Φ, h    = mpc_HVAC_info(digital_twin)
+    in_mode = h .== (op_mode == "heat")
+
+    forecasts_idx = find_index_from_datetime(forecast_json["TransformedInputsTemperature"], datetime)
+
+    e0, wbh, wbc, tbh0, tbc0 = zeros(Hu), zeros(Hu), zeros(Hu), zeros(Hu), zeros(Hu)
+    local β, T0, βh, βc
+    for k in 1:Hu
+        HVAC_map, T_map, T_inputs, HVAC_inputs = mpc_power_dynamics(digital_twin, k, datetime; mode=op_mode)
+        e0[k] = HVAC_map["intercept"] * HVAC_inputs["intercept"] + HVAC_map["nhvac"] * HVAC_inputs["nhvac"]
+        if k == 1 # Known previous temperature and balance temperatures
+            β, T0   = T_map .* Φ .* in_mode, Float64.(T_inputs)
+            βh, βc  = HVAC_map["ComfTempHeating"], HVAC_map["ComfTempCooling"]
+            tbh0[1] = HVAC_inputs["Tbh"]
+            tbc0[1] = HVAC_inputs["Tbc"]
+        else
+            Tout   = forecast_json["TransformedInputsTemperature"][forecasts_idx + k - 1]["outdoorTemperature"]
+            wbh[k] = max(0, HVAC_inputs["Trefh"] - Tout)
+            wbc[k] = max(0, Tout - HVAC_inputs["Trefc"])
+        end
+    end
+
+    # Σ_r β_r⋅ΔT_r,k for all k: ΔT = (T_k - T_k-1) with T_0 known
+    ΓT     = sgn * kron(diagm(0 => ones(Hu), -1 => -ones(Hu-1)), β')
+    e0[1] -= sgn * dot(β, T0)
+
+    return (e0=e0, ΓT=ΓT, βh=βh, βc=βc, Wbh=Diagonal(wbh), tbh0=tbh0, Wbc=Diagonal(wbc), tbc0=tbc0)
 end
 
 
@@ -378,7 +437,7 @@ function build_d_inputs(
 
     if lowercase(op_mode) == "heat"
         col_names = forecast_json["CoefsTempHeatingColNames"]
-    elseif lowercase(op_mode) == "cool"
+    elseif lowercase(op_mode) == "cool" || op_mode == "room" # Same columns in both modes
         col_names = forecast_json["CoefsTempCoolingColNames"]
     else
         @error "Unvalid op mode $mode... Choose between 'heat' or 'cool'"
@@ -435,6 +494,14 @@ function extract_data_dynamics(digital_twin::Dict{String, Any},
         row_name = digital_twin["CoefsTempHeatingRowNames"     ]
     elseif op_mode == "cool" 
         M        = digital_twin["CoefsTempCooling"             ]
+        colInfoT = digital_twin["CoefsTempCoolingColInfo"      ]
+        colInfoE = digital_twin["CoefsHVACEnergyCoolingColInfo"]
+        row_name = digital_twin["CoefsTempCoolingRowNames"     ]
+    elseif op_mode == "room" # Each room (row) with the model of its own operation mode (DT definition)
+        @assert digital_twin["CoefsTempHeatingColNames"] == digital_twin["CoefsTempCoolingColNames"] &&
+                digital_twin["CoefsTempHeatingRowNames"] == digital_twin["CoefsTempCoolingRowNames"]
+        _, h     = mpc_HVAC_info(digital_twin) # 1 = heating, 0 = cooling, in the row order
+        M        = h .* digital_twin["CoefsTempHeating"] .+ (1 .- h) .* digital_twin["CoefsTempCooling"]
         colInfoT = digital_twin["CoefsTempCoolingColInfo"      ]
         colInfoE = digital_twin["CoefsHVACEnergyCoolingColInfo"]
         row_name = digital_twin["CoefsTempCoolingRowNames"     ]

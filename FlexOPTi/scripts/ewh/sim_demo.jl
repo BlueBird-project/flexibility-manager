@@ -91,6 +91,8 @@ o = FlexOPTi.O(  # not const — compute_datetime advances each step
     TM_BASE_URL,
     false,    # soft_temperature
     1e9,      # slack_penalty
+    false,    # use_pv
+    Inf,      # time_limit [s]
 )
 
 FlexOPTi.set_logging(o)

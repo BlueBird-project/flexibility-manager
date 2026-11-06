@@ -71,6 +71,8 @@ o = FlexOPTi.O(
     "http://localhost:9090",                       # tm_base_url (unused in standalone sim)
     false,                                         # soft_temperature
     1e9,                                           # slack_penalty
+    false,                                         # use_pv
+    Inf,                                           # time_limit [s]
 )
 
 FlexOPTi.set_logging(o)

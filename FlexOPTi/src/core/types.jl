@@ -40,8 +40,13 @@ pilot::String : Pilot string identification
                 "EWH", "Montcada", ...
     - soft_temperature::Bool : Relax the temperature bounds into soft constraints,
                 penalising violations in the objective instead of forbidding them.
-    - slack_penalty::Float64 : Cost per K⋅step of temperature violation. Must stay
-                well above the energy term so comfort is never traded for money.
+    - slack_penalty::Float64 : Penalty of temperature violation in W/K, multiplied by
+                the peak price and Δt in the objective. Must stay well above the
+                energy term so comfort is never traded for money.
+    - use_pv::Bool : Include the PV production and the rest of the building
+                consumption (forecasts) in the grid power balance of the objective.
+    - time_limit::Float64 : Solver time limit in seconds (Inf = no limit). When it is
+                reached, the best solution found so far is returned.
 """
 mutable struct O
     Hu::Int
@@ -72,6 +77,12 @@ mutable struct O
     # Comfort constraint softening
     soft_temperature::Bool  # if true, temperature bounds become soft (slack-penalised) instead of hard
     slack_penalty::Float64  # cost per K⋅step of temperature violation
+
+    # PV
+    use_pv::Bool            # if true, PV and rest-of-building forecasts enter the grid power balance
+
+    # Solver
+    time_limit::Float64     # solver time limit [s] (Inf = no limit); the best solution found is returned
 end
 
 """

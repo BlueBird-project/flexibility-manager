@@ -250,6 +250,7 @@ function parse_digital_twin(::Montcada, o::O, json_path::String)::Dict{String, A
     Δt = (last_end - last_start)
     Δt = Millisecond(Δt) / Millisecond(Hour(1))
     parsed_data["DeltaTimeInHours"] = Δt
+    o.Δt = Δt * 3600 # MPC step [s] = DT step, so that the market prices are aligned on it
     parsed_data["NumberRooms"] = length(parsed_data["CoefsTempCoolingRowNames"])
 
     # Parse the lags used in the model 

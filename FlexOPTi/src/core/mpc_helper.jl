@@ -30,6 +30,7 @@ function initialize_model(o::O)
             MOI.RelativeGapTolerance() => o.mip_gap,
         ))
     end
+    isfinite(o.time_limit) && set_time_limit_sec(model, o.time_limit) # Inf = no limit
     return model
 end
 

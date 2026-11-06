@@ -65,7 +65,7 @@ function parse_OPT_output(::Montcada, oy; only_next_step::Bool=false)
     # Time step
     dt_hours = oy[:ox].digital_twin["DeltaTimeInHours"]
     Δt = Dates.Second(round(Int, dt_hours * 3600))
-    t0 = DateTime(ZonedDateTime(oy[:DT_datetime]))
+    t0 = DateTime(oy[:ox].digital_twin["LastStartDateTime"]) # step 1 = DT row matched to compute_datetime
     step_time(k) = string(t0 + (k-1)*Δt)
 
     result = Dict{String,Any}()

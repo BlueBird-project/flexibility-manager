@@ -94,14 +94,18 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     transformer_lim = 1e8
     P_max_total = 1e8
 
-    # TODO : Change the PV signal from the forecast
-    PV     = 0.0 # No PV used for this model at this stage.
-    p_rest = 0.0 # Rest of the building consumption 
+    # PV and rest of the building consumption [W] (forecasts in energy per step [Wh])
+    if o.use_pv
+        PV     = forecast_series(forecast_json, "PVEnergyPredicted",      "PVEnergy",      mpc_start_time, Hu) ./ Δt
+        p_rest = forecast_series(forecast_json, "NonHVACEnergyPredicted", "NonHVACEnergy", mpc_start_time, Hu) ./ Δt
+    else
+        PV     = zeros(Hu) # No PV used
+        p_rest = zeros(Hu) # Rest of the building consumption not accounted
+    end
 
-    # TODO : Change the ToU signal
-    ToU_price    = repeat([10.0], Hu)
-    # ToU_price[1] = 10.50
-    
+    # Market prices, one per MPC step (see fetch_market_prices)
+    ToU_price = ox.prices
+
     # If MILP then the operating mode is a decision variable
     hvac_status, h = mpc_HVAC_info(digital_twin)
     hvac_status = repeat(hvac_status', Hu)
@@ -127,21 +131,24 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # per-room: a shared slack would be paid for once and then widen the band
         # for every room at every step for free.
         @info "Temperature constraints: SOFT — band [$(round(T_low, digits=2)), " *
-              "$(round(T_high, digits=2))] K penalised at $(o.slack_penalty) per K⋅step."
-        @variable(model,             T[k=1:Nr*Hu]                 ) # Room temperature
+              "$(round(T_high, digits=2))] K penalised at $(o.slack_penalty) W/K × peak price."
+        T_min, T_max = KELVIN_OFFSET + 0.0, KELVIN_OFFSET + 50.0 # Physical range [K], keeps the big-M below finite
+        @variable(model, T_min ≤     T[k=1:Nr*Hu] ≤ T_max         ) # Room temperature
         @variable(model, 0      ≤    s[k=1:Nr*Hu]                 ) # Comfort violation [K]
         @constraint(model, T .≥ T_low  .- s)
         @constraint(model, T .≤ T_high .+ s)
     else
         @info "Temperature constraints: HARD — band [$(round(T_low, digits=2)), " *
               "$(round(T_high, digits=2))] K enforced; the solve fails if it cannot be met."
+        T_min, T_max = T_low, T_high
         @variable(model, T_low ≤     T[k=1:Nr*Hu] ≤ T_high       ) # Room temperature
     end
     @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption
     @variable(model, SP_low ≤     SP[k=1:Nr*Hu] ≤ SP_high        ) # HVAC temperature setpoint
-    @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
-    @variable(model, 0      ≤ PVused[k=1:Hu   ] ≤ PV             ) # PV used
-    @variable(model, 0      ≤ PVcurt[k=1:Hu   ] ≤ PV             ) # PV curtailed
+    # @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
+    @variable(model,           p_grid[k=1:Hu   ] ≤ transformer_lim) # TEMPORARY: p_grid ≥ 0 removed, the DT energy can be negative
+    @variable(model, 0      ≤ PVused[k=1:Hu   ] ≤ PV[k]          ) # PV used
+    @variable(model, 0      ≤ PVcurt[k=1:Hu   ] ≤ PV[k]          ) # PV curtailed
 
     @variable(model, bh[k=1:Hu], Bin)   # Balance cool
     @variable(model, bc[k=1:Hu], Bin)   # Balance heat
@@ -151,7 +158,6 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     @constraint(model, p_grid .+ PVused .== p_HVAC .+ p_rest)
 
     ## Transformation of the setpoints 
-    M = 1000     # Big-M constraint -> TODO tune latter 
     @variable(model, 0.0 .≤ SP_transformed[1:Nr*Hu] ≤ SP_high)
     @variable(model, a[1:Nr*Hu], Bin)    # a = 1 ⇒ Tsp = Tsp | a = 0 ⇒ Tsp = 0 
 
@@ -177,6 +183,10 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     T_mat_full = reshape(T, Nr, Hu)'
     a_mat_full = reshape(a, Nr, Hu)'
 
+    # Big-M of the activation constraints, smallest valid value: |SP - T_prev ± SENSITIVITY| ≤ M
+    # for SP ∈ [SP_low, SP_high] and T_prev ∈ [T_min, T_max] (or the measured prev_temp at step 1)
+    M = max(SP_high - min(T_min, minimum(prev_temp)), max(T_max, maximum(prev_temp)) - SP_low) + SENSITIVITY
+
     ## Select the right domain
     # For itereation 1 use the known previous temperature
     @constraint(model, SP_mat[1,:] .- prev_temp .- SENSITIVITY .≤  M*h[1,:]        .+ M*(1 .- a_mat_full[1,:])) # Cooling mode
@@ -184,12 +194,18 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     # For itereation ≥ 2 use the decision temperature
     @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .- SENSITIVITY .≤  M*h[i,:]        .+ M*(1 .- a_mat_full[i,:])) # Cooling mode
     @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .+ SENSITIVITY .≥ -M*(1 .- h[i,:]) .- M*(1 .- a_mat_full[i,:])) # Heating mode
-    
-    # Select the right control law
-    @constraint(model, SP_transformed .≤  a   * M         )
-    @constraint(model, SP_transformed .≥ -a   * M         )
-    @constraint(model, SP_transformed .≤  SP .+ (1 .-a )*M)
-    @constraint(model, SP_transformed .≥  SP .- (1 .-a )*M)
+    # Reverse implication (a = 0 ⇒ setpoint inactive) so that a is fully determined by SP and T
+    @constraint(model,           SP_mat[1,:] .- prev_temp         .- SENSITIVITY .≥ -M*h[1,:]        .- M*a_mat_full[1,:]) # Cooling mode
+    @constraint(model,           SP_mat[1,:] .- prev_temp         .+ SENSITIVITY .≤  M*(1 .- h[1,:]) .+ M*a_mat_full[1,:]) # Heating mode
+    @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .- SENSITIVITY .≥ -M*h[i,:]        .- M*a_mat_full[i,:]) # Cooling mode
+    @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .+ SENSITIVITY .≤  M*(1 .- h[i,:]) .+ M*a_mat_full[i,:]) # Heating mode
+
+    # Select the right control law: SP_transformed = a⋅SP, written as the McCormick envelope
+    # with SP ∈ [SP_low, SP_high] (exact for a ∈ {0,1}, tightest big-M)
+    @constraint(model, SP_transformed .≤  a * SP_high               )
+    @constraint(model, SP_transformed .≥  a * SP_low                )
+    @constraint(model, SP_transformed .≤  SP .- (1 .- a) * SP_low   )
+    @constraint(model, SP_transformed .≥  SP .- (1 .- a) * SP_high  )
     # Same with indicator constraints
     # @constraint(model,  a .⇒{SP_transformed .== SP})
     # @constraint(model, ¬a .⇒{SP_transformed .== 0})
@@ -197,14 +213,12 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
 
     # Batch dynamics 
     #function dynamics_constraints!(model, ox, power_mode)
-        Mh  = ox.dynamics["heat"].M
-        Ξh  = ox.dynamics["heat"].Ξ
-        Ψh  = ox.dynamics["heat"].Ψ
-        Mc  = ox.dynamics["cool"].M
-        Ξc  = ox.dynamics["cool"].Ξ
-        Ψc  = ox.dynamics["cool"].Ψ
-        ξ1  = ox.dynamics["heat"].ξ1
-        Δ   = ox.dynamics["heat"].Δ  
+        # Each room evolves with the model of its own operation mode (DT definition)
+        Mr  = ox.dynamics["room"].M
+        Ξr  = ox.dynamics["room"].Ξ
+        Ψr  = ox.dynamics["room"].Ψ
+        ξ1  = ox.dynamics["room"].ξ1
+        Δ   = ox.dynamics["room"].Δ
 
         Mdyn = 1000 # Big-M
         h_vec = reshape(h', :)
@@ -213,7 +227,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .≤   Mdyn *  (1 .- h_vec))  # Colling Mode 
         # @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .≥ - Mdyn *  (1 .- h_vec))  # Colling Mode
 
-        @constraint(model, T - Ξc * SP_transformed - Mc * ξ1 - Ψc * Δ .==   0      )  # Cooling Mode 
+        @constraint(model, T - Ξr * SP_transformed - Mr * ξ1 - Ψr * Δ .==   0      )
         # Todo : We want the dynamic to evolve first according to the real mode, but then to switch all to the majority mode
         #TODO : Make sure the heating cooling mode is logical. If wrong mode for someone, change the mode
 
@@ -239,13 +253,6 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     #end
 
     #dynamics_constraints!(model, ox, power_mode)
-
-    # Preallocate space
-    Tbh = Vector{AffExpr}(undef,Hu)
-    Tbc = similar(Tbh) 
-
-    p_heat_expr = Vector{JuMP.AffExpr}(undef, Hu)
-    p_cool_expr = Vector{JuMP.AffExpr}(undef, Hu)
 
     ################
     ### debugging ##
@@ -292,70 +299,25 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     ################
 
 
-    # MPC building loop
-    for mpc_step in 1:Hu
-        @info "Building MPC constraint t + $(mpc_step-1) to t + $mpc_step."
+    # Balance indicators: bh (bc) = 1 iff at least one heating (cooling) room has an active setpoint
+    # TODO : ADD Φ check if the hvac is working or not
+    # TODO : If h is a decision variable this is not linear
+    @constraint(model, a_mat_full .* h        .≤ bh)
+    @constraint(model, bh .≤ sum(a_mat_full .* h,        dims=2))
+    @constraint(model, a_mat_full .* (1 .- h) .≤ bc)
+    @constraint(model, bc .≤ sum(a_mat_full .* (1 .- h), dims=2))
 
-        ## Power state evolution ##
-        HVAC_map_heat, ΔT_map_heat, T0_heat, HVAC_inputs_heat =
-        mpc_power_dynamics(digital_twin, mpc_step, mpc_start_time; mode="heat")
+    # Batch power model (see build_power_batch), energy per step [Wh]
+    Ph  = ox.dynamics["power_heat"]
+    Pc  = ox.dynamics["power_cool"]
+    Tbh = @expression(model, Ph.Wbh * bh + Ph.tbh0) # Heating balance temperature
+    Tbc = @expression(model, Ph.Wbc * bc + Ph.tbc0) # Cooling balance temperature
+    p_heat_expr = @expression(model, Ph.e0 + Ph.ΓT * T + Ph.βh * Tbh + Ph.βc * Tbc)
+    p_cool_expr = @expression(model, Pc.e0 + Pc.ΓT * T + Pc.βh * Tbh + Pc.βc * Tbc)
 
-        HVAC_map_cool, ΔT_map_cool, T0_cool, HVAC_inputs_cool =
-        mpc_power_dynamics(digital_twin, mpc_step, mpc_start_time; mode="cool")
-
-        # Build the delta T logic
-        T_mat = reshape(T, Nr, Hu)'
-        if isempty(T0_heat)
-            ΔT_heat = T_mat[mpc_step, :]   .- T_mat[mpc_step-1, :]    
-        else
-            ΔT_heat = T_mat[mpc_step, :]   .- T0_heat
-        end
-        if isempty(T0_cool)
-            ΔT_cool = T_mat[mpc_step-1, :] .- T_mat[mpc_step, :]
-        else
-            ΔT_cool = T0_cool          .- T_mat[mpc_step, :]
-        end
-
-        # Define the transformations
-        # TODO : ADD Φ check if the hvac is working or not
-        # TODO : If h is a decision variable this is not linear
-        a_mat = reshape(a, Nr, Hu)'
-        @constraint(model, [r=1:Nr], bh[mpc_step] ≥ a_mat[mpc_step,r]*h[mpc_step,r])
-        @constraint(model,           bh[mpc_step] ≤ sum(a_mat[mpc_step,r]*h[mpc_step,r] for r=1:Nr))
-        @constraint(model, [r=1:Nr], bc[mpc_step] ≥ a_mat[mpc_step,r]*(1-h[mpc_step,r]))
-        @constraint(model,           bc[mpc_step] ≤ sum(a_mat[mpc_step,r]*(1-h[mpc_step,r]) for r=1:Nr))
-        if mpc_step == 1
-            Tbh[1] = HVAC_inputs_heat["Tbh"]
-            Tbc[1] = HVAC_inputs_cool["Tbc"]
-        else
-            forecasts_idx = find_index_from_datetime(forecast_json["TransformedInputsTemperature"], mpc_start_time)
-            outdoorTemperature = forecast_json["TransformedInputsTemperature"][forecasts_idx + mpc_step - 1]["outdoorTemperature"]
-            Tbh[mpc_step] = bh[mpc_step] * ( HVAC_inputs_heat["Trefh"] - outdoorTemperature) 
-            Tbc[mpc_step] = bc[mpc_step] * (-HVAC_inputs_cool["Trefc"] + outdoorTemperature)
-        end
-        
-        # Power models
-        p_heat_expr[mpc_step] = @expression(model,
-            HVAC_map_heat["intercept"] * HVAC_inputs_heat["intercept"] +
-            HVAC_map_heat["ComfTempHeating"] * Tbh[mpc_step] +
-            HVAC_map_heat["ComfTempCooling"] * Tbc[mpc_step] +
-            HVAC_map_heat["nhvac"]  * HVAC_inputs_heat["nhvac"] +
-            sum(ΔT_map_heat   .* ΔT_heat)
-        )
-        p_cool_expr[mpc_step] = @expression(model,
-            HVAC_map_cool["intercept"] * HVAC_inputs_cool["intercept"] +
-            HVAC_map_cool["ComfTempHeating"] * Tbh[mpc_step] +
-            HVAC_map_cool["ComfTempCooling"] * Tbc[mpc_step] +
-            HVAC_map_cool["nhvac"]  * HVAC_inputs_cool["nhvac"] +
-            sum(ΔT_map_cool   .* ΔT_cool)
-        )
-
-    end # MPC building loop
-
-    # Power equations
-    @constraint(model, power_constraint[mpc_step in 1:Hu],
-        p_HVAC[mpc_step] == power_mode[mpc_step] .* p_heat_expr[mpc_step]
-            + (1 - power_mode[mpc_step]) .* p_cool_expr[mpc_step]
+    # Power equations: energy per step [Wh] / Δt [h] = power [W]
+    @constraint(model, power_constraint,
+        p_HVAC .== (power_mode .* p_heat_expr .+ (1 .- power_mode) .* p_cool_expr) ./ Δt
     )
 
     # Objectif
@@ -368,7 +330,11 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
         # hard-constrained one whenever that one exists. When it does not, the
         # band is left by the smallest amount that restores feasibility, because
         # the penalty is linear in the violation.
-        @objective(model, Min, energy_cost + o.slack_penalty*sum(s))
+        # o.slack_penalty is in W/K: 1 K of violation in one room during one step
+        # costs like o.slack_penalty W bought at the horizon's highest price, so
+        # it follows the price level and the step length like energy_cost does.
+        λ = o.slack_penalty * maximum(abs, ToU_price) * Δt # [EUR per K⋅step]
+        @objective(model, Min, energy_cost + λ*sum(s))
     else
         @objective(model, Min, energy_cost)
     end
