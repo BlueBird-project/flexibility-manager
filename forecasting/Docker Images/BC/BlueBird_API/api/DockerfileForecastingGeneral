@@ -1,0 +1,41 @@
+# General forecasting API (main_inference.py): send history, get forecast. Use-case independent.
+# Build from the package root (folder containing api/ and FAST/):
+#   docker build -f api/DockerfileForecastingGeneral -t bluebird-forecast-general .
+#   GPU:  docker build -f api/DockerfileForecastingGeneral --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 -t bluebird-forecast-general:gpu .
+FROM python:3.10-slim
+
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG EXTRA_PIP=""
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models_cache \
+    FAST_API_CONFIG=/config/api_config.json \
+    CONFIG_FILE=/config/api_config.json \
+    DEFAULT_CONFIG=/app/api/api_config.docker.json
+
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /app /config /models_cache \
+    && chown -R app:app /app /config /models_cache
+
+WORKDIR /app
+COPY api/requirements_api.txt /tmp/requirements_api.txt
+RUN pip install --index-url "${TORCH_INDEX_URL}" torch \
+    && pip install -r /tmp/requirements_api.txt ${EXTRA_PIP}
+
+COPY --chown=app:app FAST/forge /app/FAST/forge
+COPY --chown=app:app FAST/translate /app/FAST/translate
+COPY --chown=app:app api/__init__.py api/main_inference.py api/fast_inference.py /app/api/
+COPY --chown=app:app api/api_config.docker.json /app/api/api_config.docker.json
+COPY --chown=app:app api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+USER app
+WORKDIR /app/api
+VOLUME ["/config", "/models_cache"]
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["uvicorn", "main_inference:app", "--host", "0.0.0.0", "--port", "8000"]

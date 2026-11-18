@@ -1,0 +1,15 @@
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+pydantic>=2,<3
+pandas>=2.0,<3
+numpy>=1.24,<3
+dill>=0.3.8
+tqdm
+requests
+huggingface_hub
+# torch is installed separately in the Dockerfiles (CPU or CUDA wheels via build ARG TORCH_INDEX_URL)
+chronos-forecasting>=2.0      # Chronos-2 (default model)
+# Weather forge (only if listed in your config): geopy for FAST/forge/weather_vals.py
+# Optional models (add to a derived image or pass EXTRA_PIP at build time):
+# timesfm[torch]                                   # TimesFM 3.0 (weights: NON-COMMERCIAL licence)
+# git+https://github.com/mistralai/timestral.git   # Timestral-209M

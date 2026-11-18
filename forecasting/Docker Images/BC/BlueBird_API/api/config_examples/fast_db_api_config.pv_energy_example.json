@@ -1,0 +1,173 @@
+{
+  "path_fast": "../FAST",
+  "db_path": "fast_db.sqlite",
+  "schema_file": "db_forecast_schema.sql",
+  "models": [
+    {
+      "translate": "chronos_2",
+      "model_path": "amazon/chronos-2"
+    },
+    {
+      "translate": "timesfm_3",
+      "model_path": "google/timesfm-3.0-pytorch",
+      "load_args": {
+        "device": "cpu"
+      }
+    },
+    {
+      "translate": "timestral",
+      "model_path": "mistralai/Timestral-209M",
+      "load_args": {
+        "device": "cpu"
+      }
+    }
+  ],
+  "default_model": "chronos2",
+  "preload": [],
+  "horizon": 96,
+  "freq": "15min",
+  "history_days": 10,
+  "min_history_points": 96,
+  "interval_quantiles": [
+    0.1,
+    0.9
+  ],
+  "interval_fallback": "seasonal_residual",
+  "use_weather": true,
+  "weather_models": [
+    "chronos2"
+  ],
+  "weather_ffill_steps": 4,
+  "auto_create_assets": false,
+  "default_asset_type": "energy_consumption",
+  "default_use_case": "energy_consumption",
+  "data_timezone": "Europe/Brussels",
+  "forecast_timestamp_tz": "UTC",
+  "price_ds_format": "text",
+  "sqlite_timeout_seconds": 30,
+  "max_rows_per_request": 200000,
+  "stale_after_hours": 48,
+  "locations": {
+    "1": {
+      "lat": 50.38,
+      "lon": 4.88,
+      "tz": "Europe/Brussels"
+    }
+  },
+  "use_cases": {
+    "pv": {
+      "var_name": "pv",
+      "clip_lower": 0,
+      "weather_vars": [],
+      "forges": [
+        {
+          "name": "anomaly_rules",
+          "config": {
+            "rules": [
+              {
+                "type": "night_zero",
+                "min_elevation_deg": -0.5,
+                "window_minutes": 60
+              },
+              {
+                "type": "negative_to_zero"
+              },
+              {
+                "type": "tod_outlier",
+                "k": 6.0,
+                "min_scale_frac": 0.1
+              },
+              {
+                "type": "clip_max_quantile",
+                "quantile": 0.999,
+                "factor": 1.5
+              }
+            ]
+          }
+        },
+        {
+          "name": "interpolate_15min",
+          "config": {
+            "freq": "15min",
+            "method": "linear"
+          }
+        },
+        {
+          "name": "anomaly_rules",
+          "config": {
+            "rules": [
+              {
+                "type": "night_zero",
+                "min_elevation_deg": -0.5,
+                "window_minutes": 30
+              },
+              {
+                "type": "clip_min",
+                "value": 0.0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "energy_consumption": {
+      "var_name": "energy_consumption",
+      "clip_lower": 0,
+      "weather_vars": [],
+      "forges": [
+        {
+          "name": "anomaly_rules",
+          "config": {
+            "rules": [
+              {
+                "type": "negative_to_nan"
+              },
+              {
+                "type": "rolling_spike",
+                "window_days": 7,
+                "factor": 3.0,
+                "min_abs": 5.0
+              },
+              {
+                "type": "tod_outlier",
+                "k": 6.0,
+                "min_scale_frac": 0.1
+              },
+              {
+                "type": "interpolate_nan",
+                "method": "linear"
+              }
+            ]
+          }
+        },
+        {
+          "name": "interpolate_15min",
+          "config": {
+            "freq": "15min",
+            "method": "linear"
+          }
+        },
+        {
+          "name": "anomaly_rules",
+          "config": {
+            "rules": [
+              {
+                "type": "clip_min",
+                "value": 0.0
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "push_tables": [
+    "assets",
+    "price_tags",
+    "forecast_var_names",
+    "energy_values",
+    "weather",
+    "price"
+  ],
+  "_comment": "Example for a PV + energy_consumption deployment (weather table, anomaly rules, Brussels tz). Copy to /config/fast_db_api_config.json and edit."
+}

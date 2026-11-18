@@ -1,0 +1,569 @@
+{
+	"info": {
+		"_postman_id": "8fda2339-d2b4-41f9-ad30-81bacac588fb",
+		"name": "BlueBird APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "52935276",
+		"_collection_link": "https://go.postman.co/collection/52935276-8fda2339-d2b4-41f9-ad30-81bacac588fb?source=collection_link"
+	},
+	"item": [
+		{
+			"name": "Price Forecasting",
+			"item": [
+				{
+					"name": "Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "accept",
+								"value": "*/*"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/model/status",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"model",
+								"status"
+							]
+						},
+						"description": "Generated from cURL: curl -X 'GET' \\\n  'http://127.0.0.1:8000/model/status' \\\n  -H 'accept: */*'"
+					},
+					"response": []
+				},
+				{
+					"name": "Forecast Production",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "accept",
+								"value": "*/*"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"days\": 1\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/production",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"production"
+							]
+						},
+						"description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/production' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"days\": 1\n}'"
+					},
+					"response": []
+				},
+				{
+					"name": "Backtest Forecast",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "accept",
+								"value": "*/*"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"start_date\": \"20260501\",\n  \"end_date\": \"20260502\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/backtest",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"backtest"
+							]
+						},
+						"description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/backtest' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n  \"regions\": [\n    \"ES\"\n  ],\n  \"start_date\": \"20260501\",\n  \"end_date\": \"20260502\"\n}'"
+					},
+					"response": []
+				},
+				{
+					"name": "Load Model",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "accept",
+								"value": "*/*"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/model/load?force=false",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"model",
+								"load"
+							],
+							"query": [
+								{
+									"key": "force",
+									"value": "false"
+								}
+							]
+						},
+						"description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/model/load?force=false' \\\n  -H 'accept: */*' \\\n  -d ''"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Asset Forecasting",
+			"item": [
+				{
+					"name": "Forecast Asset",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "accept",
+								"value": "*/*"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\"horizon_span\": 4,\n        \"data\": {\n            \"ds\": [\n                \"2026-10-20 00:00:00\",\n                \"2026-10-20 00:15:00\",\n                \"2026-10-20 00:30:00\",\n                \"2026-10-20 00:45:00\"\n            ],\n            \"unique_id\": [\"asset_1\", \"asset_1\", \"asset_1\", \"asset_1\"],\n            \"y\": [100.0, 101.5, 99.8, 102.1]\n        }}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/day-ahead",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"day-ahead"
+							]
+						},
+						"description": "Generated from cURL: curl -X 'POST' \\\n  'http://127.0.0.1:8000/forecast/day-ahead' \\\n  -H 'accept: */*' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"horizon_span\": 4,\n        \"data\": {\n            \"ds\": [\n                \"2026-10-20 00:00:00\",\n                \"2026-10-20 00:15:00\",\n                \"2026-10-20 00:30:00\",\n                \"2026-10-20 00:45:00\"\n            ],\n            \"unique_id\": [\"asset_1\", \"asset_1\", \"asset_1\", \"asset_1\"],\n            \"y\": [100.0, 101.5, 99.8, 102.1]\n        }}'"
+					},
+					"response": []
+				},
+				{
+					"name": "List models",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/models",
+							"protocol": "http",
+							"host": [
+								"127.0.0.1"
+							],
+							"port": "8000",
+							"path": [
+								"models"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Forecast Asset - chronos2",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/day-ahead",
+							"protocol": "http",
+							"host": [
+								"127.0.0.1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"day-ahead"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"horizon_span\": 4,\n  \"data\": {\n    \"ds\": [\n      \"2026-10-20 00:00:00\",\n      \"2026-10-20 00:15:00\",\n      \"2026-10-20 00:30:00\",\n      \"2026-10-20 00:45:00\"\n    ],\n    \"unique_id\": [\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\"\n    ],\n    \"y\": [\n      100.0,\n      101.5,\n      99.8,\n      102.1\n    ]\n  },\n  \"model\": \"chronos2\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Forecast Asset - timesfm3",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/day-ahead",
+							"protocol": "http",
+							"host": [
+								"127.0.0.1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"day-ahead"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"horizon_span\": 4,\n  \"data\": {\n    \"ds\": [\n      \"2026-10-20 00:00:00\",\n      \"2026-10-20 00:15:00\",\n      \"2026-10-20 00:30:00\",\n      \"2026-10-20 00:45:00\"\n    ],\n    \"unique_id\": [\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\"\n    ],\n    \"y\": [\n      100.0,\n      101.5,\n      99.8,\n      102.1\n    ]\n  },\n  \"model\": \"timesfm3\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Forecast Asset - timestral",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/forecast/day-ahead",
+							"protocol": "http",
+							"host": [
+								"127.0.0.1"
+							],
+							"port": "8000",
+							"path": [
+								"forecast",
+								"day-ahead"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"horizon_span\": 4,\n  \"data\": {\n    \"ds\": [\n      \"2026-10-20 00:00:00\",\n      \"2026-10-20 00:15:00\",\n      \"2026-10-20 00:30:00\",\n      \"2026-10-20 00:45:00\"\n    ],\n    \"unique_id\": [\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\",\n      \"asset_1\"\n    ],\n    \"y\": [\n      100.0,\n      101.5,\n      99.8,\n      102.1\n    ]\n  },\n  \"model\": \"timestral\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Status (models ready?)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/status",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Load model",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/load_model",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"load_model"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"model\": \"chronos2\",\n  \"wait\": false,\n  \"force\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "FAST DB API",
+			"item": [
+				{
+					"name": "Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8001/status",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Load model",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8001/load_model",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"load_model"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"model\": \"chronos2\",\n  \"device\": null,\n  \"horizon\": 96,\n  \"wait\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Push data (energy_values only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8001/push_data",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"push_data"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"create_missing_assets\": true,\n  \"energy_values\": [\n    {\n      \"ds\": \"2026-03-01 00:00:00\",\n      \"asset\": \"my-asset\",\n      \"value\": 16.75\n    },\n    {\n      \"ds\": \"2026-03-01 00:15:00\",\n      \"asset\": \"my-asset\",\n      \"value\": 16.9\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Forecast (409 \"empty database\" if energy_values is empty)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8001/forecast",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"forecast"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"assets\": [\n    \"my-asset\"\n  ],\n  \"model\": \"chronos2\",\n  \"horizon\": 96,\n  \"history_days\": 10,\n  \"quantiles\": [\n    0.1,\n    0.9\n  ],\n  \"store\": true,\n  \"auto_load\": false\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Latest stored forecasts",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8001/forecasts?asset=Karno-Heating",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"forecasts?asset=Karno-Heating"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8001/health",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8001",
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

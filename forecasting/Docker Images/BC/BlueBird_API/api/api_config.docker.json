@@ -1,0 +1,19 @@
+{
+  "_comment": "Neutral default for the general image: no forge/anomaly rules, no clipping. Mounted copy: /config/api_config.json. Use-case rules (e.g. clip_lower 0 for PV/consumption) go here.",
+  "path_fast": "../FAST",
+  "forges": [],
+  "translate": ["chronos_2", "timesfm_3", "timestral"],
+  "config_files": {
+    "forge": [],
+    "translate": [
+      {"model_path": "amazon/chronos-2"},
+      {"model_path": "google/timesfm-3.0-pytorch", "load_args": {"device": "cpu"}},
+      {"model_path": "mistralai/Timestral-209M", "load_args": {"device": "cpu"}}
+    ]
+  },
+  "default_horizon_span": 96,
+  "default_model": "chronos2",
+  "interval_quantiles": [0.1, 0.9],
+  "clip_lower": null,
+  "preload": []
+}

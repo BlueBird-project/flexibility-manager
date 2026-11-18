@@ -1,0 +1,30 @@
+# Run from the package root:  docker compose -f api/docker-compose.yml up --build
+services:
+  forecast-general:
+    build:
+      context: ..
+      dockerfile: api/DockerfileForecastingGeneral
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    ports: ["8000:8000"]
+    volumes:
+      - ./docker_volumes/config_general:/config   # api_config.json is created here on first start; edit it
+      - models_cache:/models_cache
+    restart: unless-stopped
+
+  forecast-db:
+    build:
+      context: ..
+      dockerfile: api/DockerfileForecastingDB
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    ports: ["8001:8001"]
+    volumes:
+      - ./docker_volumes/config_db:/config        # fast_db_api_config.json is created here on first start; edit it
+      - fast_db_data:/data                        # fast_db.sqlite persists here
+      - models_cache:/models_cache
+    restart: unless-stopped
+
+volumes:
+  models_cache:
+  fast_db_data:

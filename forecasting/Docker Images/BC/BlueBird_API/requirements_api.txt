@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic>=2
+pandas
+dill
+tqdm
+requests
+huggingface_hub
+torch
+chronos-forecasting>=2.0      # Chronos-2 (default model)
+# Weather forge (only if listed in api_config.json forges): see imports in FAST/forge/weather_vals.py (e.g. geopy, requests)
+# Optional models:
+# timesfm[torch]                                   # TimesFM 3.0 (weights: NON-COMMERCIAL licence)
+# git+https://github.com/mistralai/timestral.git   # Timestral-209M

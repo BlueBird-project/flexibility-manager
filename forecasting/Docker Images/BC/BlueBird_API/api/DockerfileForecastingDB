@@ -1,0 +1,43 @@
+# DB forecasting API (fast_db_api.py): push energy_values, forecast from the latest DB values. Use-case independent.
+# Build from the package root (folder containing api/ and FAST/):
+#   docker build -f api/DockerfileForecastingDB -t bluebird-forecast-db .
+#   GPU:  docker build -f api/DockerfileForecastingDB --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 -t bluebird-forecast-db:gpu .
+# The SQLite file lives on the /data volume; it is created empty from db_forecast_schema.sql on first start.
+FROM python:3.10-slim
+
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG EXTRA_PIP=""
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models_cache \
+    FAST_DB_API_CONFIG=/config/fast_db_api_config.json \
+    FAST_DB_PATH=/data/fast_db.sqlite \
+    CONFIG_FILE=/config/fast_db_api_config.json \
+    DEFAULT_CONFIG=/app/api/fast_db_api_config.json
+
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /app /config /data /models_cache \
+    && chown -R app:app /app /config /data /models_cache
+
+WORKDIR /app
+COPY api/requirements_api.txt /tmp/requirements_api.txt
+RUN pip install --index-url "${TORCH_INDEX_URL}" torch \
+    && pip install -r /tmp/requirements_api.txt ${EXTRA_PIP}
+
+COPY --chown=app:app FAST/forge /app/FAST/forge
+COPY --chown=app:app FAST/translate /app/FAST/translate
+COPY --chown=app:app api/__init__.py api/main_inference.py api/fast_inference.py api/fast_db_api.py \
+     api/fast_db_api_config.json api/db_forecast_schema.sql /app/api/
+COPY --chown=app:app api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+USER app
+WORKDIR /app/api
+VOLUME ["/config", "/data", "/models_cache"]
+EXPOSE 8001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=4).status == 200 else 1)"
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["uvicorn", "fast_db_api:app", "--host", "0.0.0.0", "--port", "8001"]

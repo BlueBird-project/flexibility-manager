@@ -1,0 +1,15 @@
+{
+  "path_fast": "../FAST",
+  "forges": ["interpolate_15min"],
+  "translate": ["chronos_2", "timesfm_3", "timestral"],
+  "config_files": {
+    "forge": [{"freq": "15min"}],
+    "translate": [
+      {"model_path": "amazon/chronos-2"},
+      {"model_path": "google/timesfm-3.0-pytorch", "load_args": {"device": "cpu"}},
+      {"model_path": "mistralai/Timestral-209M", "load_args": {"device": "cpu"}}
+    ]
+  },
+  "default_horizon_span": 96,
+  "default_model": "chronos2"
+}

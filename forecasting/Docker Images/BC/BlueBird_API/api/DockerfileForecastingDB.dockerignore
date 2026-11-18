@@ -1,0 +1,16 @@
+**/__pycache__
+**/*.pyc
+**/*.sqlite*
+**/*.db
+secrets.json
+**/secrets.json
+data
+models
+runs
+cache
+results*
+*.csv
+.venv
+.git
+FAST/augur
+FAST/surveil

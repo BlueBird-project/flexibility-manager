@@ -1,0 +1,69 @@
+{
+  "path_fast": "../FAST",
+  "db_path": "fast_db.sqlite",
+  "schema_file": "db_forecast_schema.sql",
+  "models": [
+    {
+      "translate": "chronos_2",
+      "model_path": "amazon/chronos-2"
+    },
+    {
+      "translate": "timesfm_3",
+      "model_path": "google/timesfm-3.0-pytorch",
+      "load_args": {
+        "device": "cpu"
+      }
+    },
+    {
+      "translate": "timestral",
+      "model_path": "mistralai/Timestral-209M",
+      "load_args": {
+        "device": "cpu"
+      }
+    }
+  ],
+  "default_model": "chronos2",
+  "preload": [],
+  "horizon": 96,
+  "freq": "15min",
+  "history_days": 10,
+  "min_history_points": 96,
+  "interval_quantiles": [
+    0.1,
+    0.9
+  ],
+  "interval_fallback": "seasonal_residual",
+  "use_weather": false,
+  "weather_models": [
+    "chronos2"
+  ],
+  "weather_ffill_steps": 4,
+  "auto_create_assets": true,
+  "default_asset_type": "generic",
+  "default_use_case": "default",
+  "data_timezone": "UTC",
+  "forecast_timestamp_tz": "UTC",
+  "price_ds_format": "text",
+  "sqlite_timeout_seconds": 30,
+  "max_rows_per_request": 200000,
+  "stale_after_hours": 48,
+  "push_tables": [
+    "energy_values"
+  ],
+  "_comment": "Neutral default for the DB image: no use-case rules. Only energy_values can be pushed; add use_cases/forges/clip_lower/locations here for your own use case (see config_examples/).",
+  "require_data": true,
+  "use_cases": {
+    "default": {
+      "var_name": "forecast",
+      "clip_lower": null,
+      "forges": [
+        {
+          "name": "interpolate_15min",
+          "config": {
+            "freq": "15min"
+          }
+        }
+      ]
+    }
+  }
+}
