@@ -9,10 +9,13 @@ function build_dynamics(::Montcada, o::O,
                         digital_twin::Dict{String, Any},
                         sensors::Vector{Dict{String, Any}},
                         forecasts::Dict{String, Any})
-    rows = forecasts["TransformedInputsTemperature"]
-    n_available = length(rows) - forecasts["StartIndex"] + 1
+    rows        = forecasts["TransformedInputsTemperature"]
+    future_rows = rows[forecasts["StartIndex"]:end]
+    first_empty = findfirst(r -> length(r) ≤ 2, future_rows) # Rows with only "start" / "end"
+    n_available = isnothing(first_empty) ? length(future_rows) : first_empty - 1
+    last_row    = n_available ≥ 1 ? future_rows[n_available]["start"] : "none"
     n_available ≥ o.Hu || error("The forecasts cover $n_available steps from compute_datetime " *
-                                "(last row $(rows[end]["start"])), Hu = $(o.Hu) requested.")
+                                "(last row with data $last_row), Hu = $(o.Hu) requested.")
     row = digital_twin["TransformedInputsTemperature"][digital_twin["StartIndex"]]
     missing_cols = [c for c in digital_twin["CoefsTempCoolingColNames"] if !startswith(c, "TempSP") && !haskey(row, c)]
     isempty(missing_cols) || error("The DT row $(row["start"]) has no column $(first(missing_cols)) " *
@@ -146,7 +149,7 @@ end
     T      := [xk+1, xk+2, ...., xk+Hu]  stacked room temperatures (decision variable, as in build_batch)
     bh, bc := 1 if at least one heating / cooling room has an active setpoint (decision variable)
 
-    E_k   = β0 + βn⋅nhvac_k + βh⋅Tbh_k + βc⋅Tbc_k + Σ_r β_r⋅Φ_r⋅ΔT_r,k
+    E_k   = β0 + βn⋅nhvac_k + βh⋅Tbh_k + βc⋅Tbc_k + Σ_r β_r⋅Φ_r,k⋅ΔT_r,k
     ΔT_k  = T_k - T_k-1 (heating), T_k-1 - T_k (cooling), 0 for the rooms in the other mode
     Tbh_k = bh_k⋅max(0, Trefh - Tout_k), Tbc_k = bc_k⋅max(0, Tout_k - Trefc)   (k = 1 : from the data)
 """
@@ -159,9 +162,11 @@ function build_power_batch(o::O,
     Hu       = o.Hu
     sgn      = op_mode == "heat" ? 1.0 : -1.0
 
-    # HVAC status Φ_r. Rooms not in the mode of the model don't consume.
-    Φ, h    = mpc_HVAC_info(digital_twin)
+    # HVAC status Φ_r,k for each MPC step. Rooms not in the mode of the model don't consume.
+    Φ       = mpc_HVAC_status_horizon(digital_twin, Hu) # Hu × Nr
+    _, h    = mpc_HVAC_info(digital_twin)
     in_mode = h .== (op_mode == "heat")
+    Nr      = length(h)
 
     forecasts_idx = find_index_from_datetime(forecast_json["TransformedInputsTemperature"], datetime)
 
@@ -171,7 +176,7 @@ function build_power_batch(o::O,
         HVAC_map, T_map, T_inputs, HVAC_inputs = mpc_power_dynamics(digital_twin, k, datetime; mode=op_mode)
         e0[k] = HVAC_map["intercept"] * HVAC_inputs["intercept"] + HVAC_map["nhvac"] * HVAC_inputs["nhvac"]
         if k == 1 # Known previous temperature and balance temperatures
-            β, T0   = T_map .* Φ .* in_mode, Float64.(T_inputs)
+            β, T0   = T_map .* in_mode, Float64.(T_inputs) # β_r (Φ is applied per step below)
             βh, βc  = HVAC_map["ComfTempHeating"], HVAC_map["ComfTempCooling"]
             tbh0[1] = HVAC_inputs["Tbh"]
             tbc0[1] = HVAC_inputs["Tbc"]
@@ -182,9 +187,16 @@ function build_power_batch(o::O,
         end
     end
 
-    # Σ_r β_r⋅ΔT_r,k for all k: ΔT = (T_k - T_k-1) with T_0 known
-    ΓT     = sgn * kron(diagm(0 => ones(Hu), -1 => -ones(Hu-1)), β')
-    e0[1] -= sgn * dot(β, T0)
+    # Σ_r β_r⋅Φ_r,k⋅ΔT_r,k for all k: ΔT = (T_k - T_k-1) with T_0 known
+    ΓT = zeros(Hu, Nr*Hu)
+    for k in 1:Hu
+        βk = β .* Φ[k, :]
+        ΓT[k, (k-1)*Nr+1 : k*Nr]         .=  sgn .* βk # T_k
+        if k ≥ 2
+            ΓT[k, (k-2)*Nr+1 : (k-1)*Nr] .= -sgn .* βk # T_k-1
+        end
+    end
+    e0[1] -= sgn * dot(β .* Φ[1, :], T0)               # T_0 known
 
     return (e0=e0, ΓT=ΓT, βh=βh, βc=βc, Wbh=Diagonal(wbh), tbh0=tbh0, Wbc=Diagonal(wbc), tbc0=tbc0)
 end

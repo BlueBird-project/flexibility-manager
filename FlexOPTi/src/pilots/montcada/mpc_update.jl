@@ -30,7 +30,7 @@ for building temperature and HVAC power management.
   ## Temperature & Setpoints
   - `:T` — Predicted room temperatures over the horizon (Hu × Nr).
   - `:SP` — Raw HVAC temperature setpoints (Hu × Nr).
-  - `:SP_transformed` — Setpoints after hybrid activation logic (Hu × Nr).
+  - `:SP_transformed` — Transformed setpoints Θ = a⋅Φ⋅(T_prev - SP) (cooling) or a⋅Φ⋅(SP - T_prev) (heating), in K (Hu × Nr).
   - `:SP_active` — Binary activation matrix for setpoints (Hu × Nr).
 
   ## Power & Energy
@@ -97,8 +97,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
 
     # PV and rest of the building consumption [W] (forecasts in energy per step [Wh])
     if o.use_pv
-        PV     = forecast_series(forecast_json, "PVEnergyPredicted",      "PVEnergy",      mpc_start_time, Hu) ./ Δt
-        p_rest = forecast_series(forecast_json, "NonHVACEnergyPredicted", "NonHVACEnergy", mpc_start_time, Hu) ./ Δt
+        PV     = forecast_series(forecast_json, "PVEnergyPredicted",      "PVEnergyPredicted", mpc_start_time, Hu) .* 1000 ./ Δt # PV in kWh
+        p_rest = forecast_series(forecast_json, "NonHVACEnergyPredicted", "NonHVACEnergy",     mpc_start_time, Hu) ./ Δt         # in Wh
     else
         PV     = zeros(Hu) # No PV used
         p_rest = zeros(Hu) # Rest of the building consumption not accounted
@@ -109,7 +109,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
 
     # If MILP then the operating mode is a decision variable
     hvac_status, h = mpc_HVAC_info(digital_twin)
-    hvac_status = repeat(hvac_status', Hu)
+    hvac_status = mpc_HVAC_status_horizon(digital_twin, Hu) # Φ per MPC step (Hu × Nr)
     power_mode = Int.(sum(h) > threshold) |> x -> fill(x, Hu)
     @info "Energy model: $(power_mode[1] == 1 ? "heating" : "cooling") ($(round(Int, sum(h))) of $Nr rooms in heating mode)."
     h = repeat(h', Hu)
@@ -147,8 +147,7 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     end
     @variable(model, p_low  ≤ p_HVAC[k=1:Hu   ] ≤ p_high         ) # Room power consumption
     @variable(model, SP_low ≤     SP[k=1:Nr*Hu] ≤ SP_high        ) # HVAC temperature setpoint
-    # @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid
-    @variable(model,           p_grid[k=1:Hu   ] ≤ transformer_lim) # TEMPORARY: p_grid ≥ 0 removed, the DT energy can be negative
+    @variable(model, 0      ≤ p_grid[k=1:Hu   ] ≤ transformer_lim) # Power bought from the grid (no export: extra PV is curtailed)
     @variable(model, 0      ≤ PVused[k=1:Hu   ] ≤ PV[k]          ) # PV used
     @variable(model, 0      ≤ PVcurt[k=1:Hu   ] ≤ PV[k]          ) # PV curtailed
 
@@ -160,8 +159,8 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     @constraint(model, p_grid .+ PVused .== p_HVAC .+ p_rest)
 
     ## Transformation of the setpoints 
-    @variable(model, 0.0 .≤ SP_transformed[1:Nr*Hu] ≤ SP_high)
-    @variable(model, a[1:Nr*Hu], Bin)    # a = 1 ⇒ Tsp = Tsp | a = 0 ⇒ Tsp = 0 
+    @variable(model, SP_transformed[1:Nr*Hu])  # Θ = a⋅Φ⋅(T_prev - SP) cooling, a⋅Φ⋅(SP - T_prev) heating [K]
+    @variable(model, a[1:Nr*Hu], Bin)          # a = 1 ⇒ setpoint active | a = 0 ⇒ Θ = 0
 
 
 
@@ -202,12 +201,24 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .- SENSITIVITY .≥ -M*h[i,:]        .- M*a_mat_full[i,:]) # Cooling mode
     @constraint(model, [i=2:Hu], SP_mat[i,:] .- T_mat_full[i-1,:] .+ SENSITIVITY .≤  M*(1 .- h[i,:]) .+ M*a_mat_full[i,:]) # Heating mode
 
-    # Select the right control law: SP_transformed = a⋅SP, written as the McCormick envelope
-    # with SP ∈ [SP_low, SP_high] (exact for a ∈ {0,1}, tightest big-M)
-    @constraint(model, SP_transformed .≤  a * SP_high               )
-    @constraint(model, SP_transformed .≥  a * SP_low                )
-    @constraint(model, SP_transformed .≤  SP .- (1 .- a) * SP_low   )
-    @constraint(model, SP_transformed .≥  SP .- (1 .- a) * SP_high  )
+    # Select the right control law (DT definition): Θ = a⋅Φ⋅ΔT with
+    #   ΔT = T_prev - SP (cooling) or SP - T_prev (heating), T_prev = temperature at the step before
+    # a⋅ΔT is written as the McCormick envelope with ΔT ∈ [ΔT_low, ΔT_high] (exact for a ∈ {0,1}),
+    # then multiplied by the HVAC status Φ ≥ 0 (data), so that Θ = 0 when the HVAC is off.
+    T_prev_mat = [k == 1 ? AffExpr(prev_temp[r]) : 1.0 * T_mat_full[k-1, r] for k in 1:Hu, r in 1:Nr] # Hu × Nr
+    sgn_mat    = 1 .- 2 .* h                                                  # +1 cooling, -1 heating
+    ΔT         = reshape((sgn_mat .* (T_prev_mat .- SP_mat))', :)             # Same order as SP_transformed
+    Φ_vec      = reshape(hvac_status', :)
+
+    T_prev_low  = min(T_min, minimum(prev_temp))
+    T_prev_high = max(T_max, maximum(prev_temp))
+    ΔT_low      = min(T_prev_low  - SP_high, SP_low  - T_prev_high) # Valid in both modes
+    ΔT_high     = max(T_prev_high - SP_low,  SP_high - T_prev_low )
+
+    @constraint(model, SP_transformed .≤  Φ_vec .* (a .* ΔT_high)               )
+    @constraint(model, SP_transformed .≥  Φ_vec .* (a .* ΔT_low )               )
+    @constraint(model, SP_transformed .≤  Φ_vec .* (ΔT .- (1 .- a) .* ΔT_low )  )
+    @constraint(model, SP_transformed .≥  Φ_vec .* (ΔT .- (1 .- a) .* ΔT_high)  )
     # Same with indicator constraints
     # @constraint(model,  a .⇒{SP_transformed .== SP})
     # @constraint(model, ¬a .⇒{SP_transformed .== 0})
@@ -372,13 +383,6 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
                   "($room_name $side the band at $t_worst); $n_violating of $(Hu*Nr) room-steps outside the band."
         elseif o.soft_temperature
             @info "Comfort band held at every room and step; no slack used."
-        end
-
-        # TEMPORARY: p_grid ≥ 0 is disabled (see the p_grid variable), make it visible when used
-        p_grid_min = minimum(value.(p_grid))
-        if p_grid_min < -EPSILON
-            @warn "p_grid < 0 at $(count(<(-EPSILON), value.(p_grid))) of $Hu steps (min $(round(p_grid_min/1e3, digits=2)) kW): " *
-                  "negative HVAC energy from the DT, or PV exported (p_grid ≥ 0 is temporarily disabled)."
         end
 
         # TODO : Rename the symbols as string and use a convention

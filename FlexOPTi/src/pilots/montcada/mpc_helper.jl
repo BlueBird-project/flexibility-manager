@@ -340,13 +340,52 @@ function mpc_HVAC_info(digital_twin::Dict{String, Any}, backward=0::Int)
 
     # Get the room order
     room_order = digital_twin["CoefsTempHeatingRowNames"]
-    # Extract the hvac
-    hvac_dict  = digital_twin["HVACStatus"][end-backward]
+    # Extract the hvac of the current MPC step (backward = 1: one step before, -1: one step ahead)
+    hvac_dict  = digital_twin["HVACStatus"][hvac_status_index(digital_twin) - backward]
 
     status = get.(Ref(hvac_dict), "PW_"     .* string.(extract_index.(room_order)), missing)
     mode   = get.(Ref(hvac_dict), "OpMode_" .* string.(extract_index.(room_order)), missing)
 
     return Float64.(status), Int.(mode .≤ 2) # status ∈ [0,1]: fraction of the step the HVAC was ON
+end
+
+
+"""
+    hvac_status_index(digital_twin) -> Int
+
+Index of the `HVACStatus` entry of the current MPC step: the one that ends with the
+DT row matched to compute_datetime (`LastEndDateTime`).
+"""
+function hvac_status_index(digital_twin::Dict{String, Any})::Int
+    idx = findfirst(d ->
+        ZonedDateTime(d["end"]) == digital_twin["LastEndDateTime"],
+        digital_twin["HVACStatus"]
+    )
+    isnothing(idx) && error("No HVACStatus entry ends at $(digital_twin["LastEndDateTime"]) (DT row of compute_datetime).")
+    return idx
+end
+
+
+"""
+    mpc_HVAC_status_horizon(digital_twin, Hu) -> Matrix{Float64}
+
+HVAC status Φ (Hu × Nr, rooms in the row order) for the MPC steps k = 1:Hu,
+read from the `HVACStatus` entries from the current step on.
+If `HVACStatus` ends before the horizon, the last status is kept (with a warning).
+"""
+function mpc_HVAC_status_horizon(digital_twin::Dict{String, Any}, Hu::Int)::Matrix{Float64}
+
+    n_ahead = length(digital_twin["HVACStatus"]) - hvac_status_index(digital_twin) # Entries after the current step
+    n_ahead < Hu - 1 && @warn "HVACStatus covers $(n_ahead + 1) of the $Hu MPC steps; " *
+                              "the last status is kept for the remaining steps."
+
+    Φ = zeros(Hu, digital_twin["NumberRooms"])
+    for k in 1:Hu
+        status, _ = mpc_HVAC_info(digital_twin, -min(k - 1, n_ahead))
+        Φ[k, :]   = status
+    end
+
+    return Φ
 end
 
 
@@ -363,7 +402,12 @@ function forecast_series(forecast_json::Dict{String, Any}, key::String, field::S
     list = forecast_json[key]
     idx  = find_index_from_datetime(list, start_time)
     idx + Hu - 1 ≤ length(list) || error("'$key' has $(length(list) - idx + 1) steps from $start_time, Hu = $Hu needed.")
-    return [Float64(list[idx + k - 1][field]) for k in 1:Hu]
+
+    values  = [get(list[idx + k - 1], field, nothing) for k in 1:Hu]
+    k_empty = findfirst(isnothing, values)
+    isnothing(k_empty) || error("'$key' has no value of '$field' at $(list[idx + k_empty - 1]["start"]) (MPC step $k_empty).")
+
+    return Float64.(values)
 end
 
 
@@ -371,11 +415,8 @@ function transform_setpoint(SP, SP_part, input_dict, digital_twin)
         
     # Find the past operating modes
     op_modes = digital_twin["HVACStatus"]
-    idx_op = findfirst(d ->
-        ZonedDateTime(d["end"]) == digital_twin["LastEndDateTime"],
-        op_modes
-    )
-    
+    idx_op = hvac_status_index(digital_twin)
+
     idx = parse(Int, SP_part[2])
     if length(SP_part) ≥ 3
         lag = parse(Int, lstrip(SP_part[3],'l'))
@@ -388,11 +429,13 @@ function transform_setpoint(SP, SP_part, input_dict, digital_twin)
     T = input_dict[key]
     
     op_mode = op_modes[idx_op]["OpMode_$idx"]
+    Φ       = op_modes[idx_op]["PW_$idx"] # HVAC status at the setpoint step
 
+    # Setpoint transform (DT definition): Θ = (T_t-1 - SP)⋅Φ (cooling), (SP - T_t-1)⋅Φ (heating), 0 if inactive
     if (op_mode ≥ 3) & (SP - T - SENSITIVITY ≤ 0)
-        return SP
+        return (T - SP) * Φ
     elseif (op_mode ≤ 2) & (SP - T + SENSITIVITY ≥ 0)
-        return SP
+        return (SP - T) * Φ
     end
 
     return 0.0

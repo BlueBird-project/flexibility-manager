@@ -14,7 +14,7 @@ function opt_output_to_file(filename::String, opt_output::Dict{Symbol, Any} ;
                 continue
             end
 
-            if kelvin == false && key ∈ [:T, :SP, :SP_transformed]
+            if kelvin == false && key ∈ [:T, :SP] # SP_transformed is a temperature difference
                 val = val .- KELVIN_OFFSET
             end
 

@@ -63,10 +63,11 @@ All keyword arguments override fields of the default options object `O`
 
 ## PV
 - `use_pv::Bool`
-  If `true`, the grid power is `p_grid = p_HVAC + p_rest - PVused`, with the PV
-  production and the rest of the building consumption read from the forecast
-  file (Montcada: `PVEnergyPredicted` and `NonHVACEnergyPredicted`). If `false`,
-  `p_grid = p_HVAC`. Default: `false`.
+  If `true`, the grid power is `p_grid = p_HVAC + p_rest - PVused` (total building
+  consumption minus the PV used; PV is free and the extra PV is curtailed, no export),
+  with the PV production and the rest of the building consumption read from the
+  forecast file (Montcada: `PVEnergyPredicted` in kWh and `NonHVACEnergyPredicted`
+  in Wh, per step). If `false`, `p_grid = p_HVAC`. Default: `false`.
 
 ## Solver
 - `mip_gap::Float64`

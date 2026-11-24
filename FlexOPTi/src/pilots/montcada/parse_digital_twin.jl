@@ -247,7 +247,11 @@ function parse_digital_twin(::Montcada, o::O, json_path::String)::Dict{String, A
     last_end   = TimeZones.ZonedDateTime(parsed_data["TransformedInputsTemperature"][datetime_index]["end"  ])
     parsed_data["LastStartDateTime"] = last_start 
     parsed_data["LastEndDateTime"  ] = last_end
-    Δt = (last_end - last_start)
+    # DT step = spacing between two consecutive rows ("end" - "start" can be a longer window)
+    rows       = parsed_data["TransformedInputsTemperature"]
+    next_index = datetime_index < length(rows) ? datetime_index + 1 : datetime_index - 1
+    next_start = TimeZones.ZonedDateTime(rows[next_index]["start"])
+    Δt = abs(next_start - last_start)
     Δt = Millisecond(Δt) / Millisecond(Hour(1))
     parsed_data["DeltaTimeInHours"] = Δt
     Δt_o = o.Δt
