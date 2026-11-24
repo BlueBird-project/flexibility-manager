@@ -162,6 +162,17 @@ function mpc_update(::Montcada, o::O, ox::OX)::Dict{Symbol, Any}
     @variable(model, SP_transformed[1:Nr*Hu])  # Θ = a⋅Φ⋅(T_prev - SP) cooling, a⋅Φ⋅(SP - T_prev) heating [K]
     @variable(model, a[1:Nr*Hu], Bin)          # a = 1 ⇒ setpoint active | a = 0 ⇒ Θ = 0
 
+    # MILP horizon: binaries only on the first milp_horizon steps, relaxed to [0,1] for the rest
+    # (0 = full LP, Hu = full MILP). Only the first step is applied, the rest is a relaxed forecast.
+    milp_steps = clamp(o.milp_horizon, 0, Hu)
+    for k in milp_steps+1:Hu
+        for v in [bh[k]; bc[k]; a[(k-1)*Nr+1 : k*Nr]] # a of step k (same order as SP_transformed)
+            unset_binary(v)
+            set_lower_bound(v, 0.0)
+            set_upper_bound(v, 1.0)
+        end
+    end
+
 
 
 

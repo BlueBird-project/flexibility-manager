@@ -73,6 +73,11 @@ All keyword arguments override fields of the default options object `O`
 - `mip_gap::Float64`
   Relative MIP gap at which the solver stops (e.g. `0.02` = 2%). Default: `1e-4`.
 
+- `milp_horizon::Int`
+  Number of first MPC steps with binary variables; the following steps are
+  relaxed to [0,1] (faster, only the first step is applied). `0` = full LP,
+  `Hu` = full MILP. Default: `1`.
+
 - `time_limit::Float64`
   Solver time limit in seconds. When it is reached, the best solution found so
   far is returned (`OPT_status = TIME_LIMIT`); if none was found, the outputs
@@ -170,7 +175,7 @@ function _optimize(o::O, constraint_kwargs, process_start_datetime,
 	constraints = build_constraints(o.pilot; constraint_kwargs...)
 
 	@info "Starting one step optimization: compute_datetime=$(o.compute_datetime), Hu=$(o.Hu), Δt=$(o.Δt) s, " *
-	      "soft_temperature=$(o.soft_temperature), use_pv=$(o.use_pv), mip_gap=$(o.mip_gap), time_limit=$(o.time_limit) s"
+	      "soft_temperature=$(o.soft_temperature), use_pv=$(o.use_pv), mip_gap=$(o.mip_gap), milp_horizon=$(o.milp_horizon), time_limit=$(o.time_limit) s"
 
 	# TODO : With the API cach the lattest dynamics in a module digital twin and if the API gives nothing use the lattest catch data
 	@info "Reading the digital twin from $digital_twin_file."
